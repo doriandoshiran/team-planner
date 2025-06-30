@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ensure all links and buttons are clickable */
+a, button {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* Fix any potential z-index issues */
+.sidebar-nav {
+  z-index: 10;
+}
+
+/* Ensure navigation links are interactive */
+nav a {
+  display: block;
+  text-decoration: none;
+  pointer-events: auto;
+}

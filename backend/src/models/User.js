@@ -5,7 +5,8 @@ const userSchema = new mongoose.Schema({
   name: {
     type: String,
     required: [true, 'Name is required'],
-    trim: true
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters long']
   },
   email: {
     type: String,
@@ -18,7 +19,7 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: [true, 'Password is required'],
-    minlength: 6,
+    minlength: [6, 'Password must be at least 6 characters long'],
     select: false
   },
   role: {
@@ -26,25 +27,20 @@ const userSchema = new mongoose.Schema({
     enum: ['admin', 'manager', 'member'],
     default: 'member'
   },
-  avatar: {
-    type: String,
-    default: null
-  },
   department: {
     type: String,
-    default: null
+    trim: true
   },
   position: {
     type: String,
-    default: null
+    trim: true
   },
   isActive: {
     type: Boolean,
     default: true
   },
   lastLogin: {
-    type: Date,
-    default: null
+    type: Date
   },
   preferences: {
     theme: {
@@ -53,15 +49,21 @@ const userSchema = new mongoose.Schema({
       default: 'light'
     },
     notifications: {
-      email: { type: Boolean, default: true },
-      inApp: { type: Boolean, default: true }
+      email: {
+        type: Boolean,
+        default: true
+      },
+      push: {
+        type: Boolean,
+        default: true
+      }
     }
   }
 }, {
   timestamps: true
 });
 
-// Hash password before saving
+// Password hashing middleware
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   
@@ -74,17 +76,12 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Compare password method
+// Password comparison method
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Get public profile
-userSchema.methods.toJSON = function() {
-  const user = this.toObject();
-  delete user.password;
-  delete user.__v;
-  return user;
-};
+// Index for faster email lookups
+userSchema.index({ email: 1 });
 
 module.exports = mongoose.model('User', userSchema);
