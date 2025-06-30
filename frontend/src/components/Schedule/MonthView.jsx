@@ -1,16 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, Building, Home, ArrowRightLeft } from 'lucide-react';
 
-const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
+const MonthView = ({ schedule, onDateClick, exchangeRequests, onScheduleUpdate }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
+  // Fixed to start week from Monday
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
+    
+    // Fixed Monday calculation - convert Sunday=0 to Sunday=6, Monday=0
+    let startingDayOfWeek = firstDay.getDay();
+    startingDayOfWeek = (startingDayOfWeek + 6) % 7; // Monday = 0
 
     const days = [];
     
@@ -60,7 +64,7 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
 
   const isWeekend = (date) => {
     const day = date.getDay();
-    return day === 0 || day === 6;
+    return day === 0 || day === 6; // Sunday or Saturday
   };
 
   const isToday = (date) => {
@@ -74,7 +78,8 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Fixed week days starting with Monday
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div className="bg-white shadow rounded-lg p-6">
@@ -109,7 +114,7 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
 
       {/* Calendar Grid */}
       <div className="grid grid-cols-7 gap-1">
-        {/* Week day headers */}
+        {/* Week day headers - Starting with Monday */}
         {weekDays.map(day => (
           <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
             {day}
@@ -134,7 +139,10 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
               onClick={() => !weekend && onDateClick(date)}
               className={`p-2 h-24 border border-gray-200 cursor-pointer hover:bg-gray-50 relative ${
                 today ? 'ring-2 ring-blue-500' : ''
-              } ${weekend ? 'bg-gray-50 cursor-not-allowed' : ''}`}
+              } ${weekend ? 'bg-gray-50 cursor-not-allowed' : ''} ${
+                location === 'office' ? 'bg-blue-100 hover:bg-blue-200' : 
+                location === 'remote' ? 'bg-green-100 hover:bg-green-200' : ''
+              }`}
             >
               <div className="flex justify-between items-start h-full">
                 <span className={`text-sm ${today ? 'font-bold text-blue-600' : 'text-gray-900'}`}>
@@ -147,9 +155,15 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
               </div>
               
               {!weekend && location && (
-                <div className={`absolute bottom-1 left-1 right-1 px-1 py-0.5 rounded text-xs font-medium border flex items-center justify-center space-x-1 ${getLocationColor(location)}`}>
-                  {getLocationIcon(location)}
-                  <span className="capitalize">{location}</span>
+                <div className="absolute bottom-1 left-1 right-1">
+                  <div className={`text-center text-xs font-medium py-1 rounded ${
+                    location === 'office' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-green-600 text-white'
+                  }`}>
+                    {getLocationIcon(location)}
+                    <span className="ml-1 capitalize">{location}</span>
+                  </div>
                 </div>
               )}
               
@@ -166,14 +180,14 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests }) => {
       {/* Legend */}
       <div className="flex items-center justify-center space-x-6 mt-4 text-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-blue-100 border border-blue-200 rounded flex items-center justify-center">
-            <Building className="h-2 w-2 text-blue-800" />
+          <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center">
+            <Building className="h-2 w-2 text-white" />
           </div>
           <span>Office</span>
         </div>
         <div className="flex items-center space-x-2">
-          <div className="w-4 h-4 bg-green-100 border border-green-200 rounded flex items-center justify-center">
-            <Home className="h-2 w-2 text-green-800" />
+          <div className="w-4 h-4 bg-green-600 rounded flex items-center justify-center">
+            <Home className="h-2 w-2 text-white" />
           </div>
           <span>Remote</span>
         </div>

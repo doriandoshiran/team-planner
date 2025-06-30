@@ -16,31 +16,12 @@ const TaskList = () => {
 
   const fetchTasks = async () => {
     try {
+      setLoading(true);
       const data = await taskService.getTasks();
       setTasks(data);
     } catch (error) {
       console.error('Error fetching tasks:', error);
-      // For now, use mock data
-      setTasks([
-        {
-          id: 1,
-          title: 'Update user interface',
-          description: 'Redesign the main dashboard layout',
-          priority: 'high',
-          status: 'inprogress',
-          dueDate: '2025-07-05',
-          assignee: 'John Doe'
-        },
-        {
-          id: 2,
-          title: 'Fix login bug',
-          description: 'Resolve authentication issues',
-          priority: 'urgent',
-          status: 'todo',
-          dueDate: '2025-07-02',
-          assignee: 'Jane Smith'
-        }
-      ]);
+      setTasks([]);
     } finally {
       setLoading(false);
     }
@@ -49,26 +30,22 @@ const TaskList = () => {
   const handleCreateTask = async (taskData) => {
     try {
       const newTask = await taskService.createTask(taskData);
-      setTasks([...tasks, { ...newTask, id: Date.now() }]);
+      setTasks([newTask, ...tasks]);
     } catch (error) {
       console.error('Error creating task:', error);
-      // Mock creation for now
-      setTasks([...tasks, { ...taskData, id: Date.now() }]);
+      alert('Error creating task: ' + error.message);
     }
   };
 
   const handleUpdateTask = async (taskData) => {
     try {
-      await taskService.updateTask(editingTask.id, taskData);
+      const updatedTask = await taskService.updateTask(editingTask._id, taskData);
       setTasks(tasks.map(task => 
-        task.id === editingTask.id ? { ...task, ...taskData } : task
+        task._id === editingTask._id ? updatedTask : task
       ));
     } catch (error) {
       console.error('Error updating task:', error);
-      // Mock update for now
-      setTasks(tasks.map(task => 
-        task.id === editingTask.id ? { ...task, ...taskData } : task
-      ));
+      alert('Error updating task: ' + error.message);
     }
   };
 
@@ -76,11 +53,10 @@ const TaskList = () => {
     if (window.confirm('Are you sure you want to delete this task?')) {
       try {
         await taskService.deleteTask(id);
-        setTasks(tasks.filter(task => task.id !== id));
+        setTasks(tasks.filter(task => task._id !== id));
       } catch (error) {
         console.error('Error deleting task:', error);
-        // Mock deletion for now
-        setTasks(tasks.filter(task => task.id !== id));
+        alert('Error deleting task: ' + error.message);
       }
     }
   };
@@ -89,14 +65,11 @@ const TaskList = () => {
     try {
       await taskService.updateTaskStatus(taskId, newStatus);
       setTasks(tasks.map(task => 
-        task.id === taskId ? { ...task, status: newStatus } : task
+        task._id === taskId ? { ...task, status: newStatus } : task
       ));
     } catch (error) {
       console.error('Error updating task status:', error);
-      // Mock status update for now
-      setTasks(tasks.map(task => 
-        task.id === taskId ? { ...task, status: newStatus } : task
-      ));
+      alert('Error updating task status: ' + error.message);
     }
   };
 
@@ -166,7 +139,7 @@ const TaskList = () => {
       {/* Task Grid */}
       <div className="grid gap-4">
         {filteredTasks.map(task => (
-          <div key={task.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+          <div key={task._id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-3">
               <h3 className="text-lg font-semibold text-gray-900">{task.title}</h3>
               <div className="flex space-x-2">
@@ -180,7 +153,7 @@ const TaskList = () => {
                   <Edit className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => handleDeleteTask(task.id)}
+                  onClick={() => handleDeleteTask(task._id)}
                   className="text-gray-400 hover:text-red-600"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -199,7 +172,7 @@ const TaskList = () => {
                 
                 <select
                   value={task.status}
-                  onChange={(e) => handleStatusChange(task.id, e.target.value)}
+                  onChange={(e) => handleStatusChange(task._id, e.target.value)}
                   className={`px-2 py-1 rounded-full text-xs font-medium border-0 ${getStatusColor(task.status)}`}
                 >
                   <option value="todo">To Do</option>

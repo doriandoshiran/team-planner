@@ -78,7 +78,8 @@ router.post('/admin/register', async (req, res) => {
         email: user.email,
         role: user.role,
         department: user.department,
-        position: user.position
+        position: user.position,
+        isActive: user.isActive
       }
     });
   } catch (error) {
@@ -87,12 +88,104 @@ router.post('/admin/register', async (req, res) => {
   }
 });
 
+// Get all users (admin only)
+router.get('/users', async (req, res) => {
+  try {
+    const users = await User.find({}, '-password');
+    console.log('Fetching users, found:', users.length);
+    res.json(users.map(user => ({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      department: user.department,
+      position: user.position,
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt
+    })));
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ message: 'Server error fetching users' });
+  }
+});
+
+// Delete user (admin only)
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    console.log('Delete user attempt:', userId);
+
+    // Check if user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Delete the user
+    await User.findByIdAndDelete(userId);
+    console.log('User deleted successfully:', user.email);
+
+    res.json({ 
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Server error deleting user' });
+  }
+});
+
+// Update user (admin only)
+router.put('/users/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { name, email, department, position, role, isActive } = req.body;
+    
+    console.log('Update user attempt:', userId, req.body);
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update user fields
+    user.name = name || user.name;
+    user.email = email || user.email;
+    user.department = department !== undefined ? department : user.department;
+    user.position = position !== undefined ? position : user.position;
+    user.role = role || user.role;
+    user.isActive = isActive !== undefined ? isActive : user.isActive;
+
+    await user.save();
+    console.log('User updated successfully:', user.email);
+
+    res.json({
+      message: 'User updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        department: user.department,
+        position: user.position,
+        role: user.role,
+        isActive: user.isActive
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ message: 'Server error updating user' });
+  }
+});
+
 // Login endpoint
 router.post('/login', async (req, res) => {
   try {
     console.log('=== LOGIN ATTEMPT STARTED ===');
     console.log('Request body:', req.body);
-    console.log('Request headers:', req.headers);
     
     const { email, password } = req.body;
 

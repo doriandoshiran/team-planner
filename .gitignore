@@ -4,6 +4,12 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Package lock files
+package-lock.json
+**/package-lock.json
+frontend/package-lock.json
+backend/package-lock.json
+
 # Environment variables
 .env
 .env.local
@@ -36,7 +42,7 @@ pids
 *.seed
 *.pid.lock
 
-# Coverage directory used by tools like istanbul
+# Coverage directory
 coverage/
 
 # Dependency directories
@@ -53,3 +59,8 @@ jspm_packages/
 
 # Yarn Integrity file
 .yarn-integrity
+
+# Local storage files
+schedule_*
+admin_schedules
+

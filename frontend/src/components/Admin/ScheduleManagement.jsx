@@ -1,44 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, Building, Home, Save, X } from 'lucide-react';
-import MonthView from '../Schedule/MonthView';
+import { Calendar, Users, Building, Home, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import api from '../../services/api';
 
 const ScheduleManagement = () => {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [schedules, setSchedules] = useState({});
+  const [loading, setLoading] = useState(true);
   const [showDateRangeModal, setShowDateRangeModal] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedDate, setSelectedDate] = useState(null);
-  const [viewMode, setViewMode] = useState('month');
 
-  // Mock employees data
   useEffect(() => {
-    setEmployees([
-      { id: 1, name: 'John Doe', email: 'john@company.com', department: 'Development' },
-      { id: 2, name: 'Jane Smith', email: 'jane@company.com', department: 'Design' },
-      { id: 3, name: 'Mike Johnson', email: 'mike@company.com', department: 'Marketing' },
-      { id: 4, name: 'Sarah Wilson', email: 'sarah@company.com', department: 'HR' }
-    ]);
-
-    // Mock schedule data
-    setSchedules({
-      1: { // John Doe
-        '2025-06-30': 'office',
-        '2025-07-01': 'remote',
-        '2025-07-02': 'office',
-        '2025-07-03': 'remote',
-        '2025-07-04': 'office'
-      },
-      2: { // Jane Smith
-        '2025-06-30': 'remote',
-        '2025-07-01': 'office',
-        '2025-07-02': 'remote',
-        '2025-07-03': 'office',
-        '2025-07-04': 'remote'
-      }
-    });
+    fetchEmployees();
   }, []);
+
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/auth/users');
+      setEmployees(response.data);
+      
+      // Load schedules from localStorage for persistence
+      const savedSchedules = localStorage.getItem('admin_schedules');
+      if (savedSchedules) {
+        setSchedules(JSON.parse(savedSchedules));
+      }
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+      setEmployees([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSchedulesToStorage = (newSchedules) => {
+    localStorage.setItem('admin_schedules', JSON.stringify(newSchedules));
+  };
 
   const handleEmployeeSelect = (employee) => {
     setSelectedEmployee(employee);
@@ -52,12 +51,10 @@ const ScheduleManagement = () => {
   const handleLocationSelect = (location) => {
     setSelectedLocation(location);
     if (selectedDate) {
-      // Single day assignment
       applySingleDay(selectedDate, location);
       setShowDateRangeModal(false);
       setSelectedDate(null);
     } else {
-      // Show date range modal for bulk assignment
       setShowDateRangeModal(true);
     }
   };
@@ -65,15 +62,19 @@ const ScheduleManagement = () => {
   const applySingleDay = (date, location) => {
     if (!selectedEmployee) return;
     
-    setSchedules(prev => ({
-      ...prev,
+    const newSchedules = {
+      ...schedules,
       [selectedEmployee.id]: {
-        ...prev[selectedEmployee.id],
+        ...schedules[selectedEmployee.id],
         [date]: location
       }
-    }));
+    };
+    
+    setSchedules(newSchedules);
+    saveSchedulesToStorage(newSchedules);
   };
 
+  // Fixed date range application to properly include Mondays
   const applyDateRange = () => {
     if (!selectedEmployee || !dateRange.start || !dateRange.end || !selectedLocation) return;
 
@@ -81,19 +82,26 @@ const ScheduleManagement = () => {
     const end = new Date(dateRange.end);
     const newSchedule = { ...schedules[selectedEmployee.id] };
 
-    // Apply location to all weekdays in the range
-    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-      const dayOfWeek = d.getDay();
-      if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Skip weekends
-        const dateStr = d.toISOString().split('T')[0];
+    // Fixed loop to properly include all weekdays including Mondays
+    const currentDate = new Date(start);
+    while (currentDate <= end) {
+      const dayOfWeek = currentDate.getDay();
+      // Only apply to weekdays (Monday=1, Tuesday=2, ..., Friday=5)
+      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+        const dateStr = currentDate.toISOString().split('T')[0];
         newSchedule[dateStr] = selectedLocation;
       }
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    setSchedules(prev => ({
-      ...prev,
+    const newSchedules = {
+      ...schedules,
       [selectedEmployee.id]: newSchedule
-    }));
+    };
+    
+    setSchedules(newSchedules);
+    saveSchedulesToStorage(newSchedules);
 
     // Reset modal
     setShowDateRangeModal(false);
@@ -114,6 +122,14 @@ const ScheduleManagement = () => {
     
     return { total, office, remote };
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-lg">Loading employees...</div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -164,7 +180,7 @@ const ScheduleManagement = () => {
                     }`}
                   >
                     <div className="font-medium text-gray-900">{employee.name}</div>
-                    <div className="text-sm text-gray-600">{employee.department}</div>
+                    <div className="text-sm text-gray-600">{employee.department || 'No Department'}</div>
                     
                     {stats.total > 0 && (
                       <div className="flex space-x-2 mt-2 text-xs">
@@ -180,6 +196,13 @@ const ScheduleManagement = () => {
                 );
               })}
             </div>
+
+            {employees.length === 0 && (
+              <div className="text-center py-8">
+                <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No employees found</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -199,7 +222,6 @@ const ScheduleManagement = () => {
               <EnhancedMonthView
                 schedule={getEmployeeSchedule()}
                 onDateClick={handleDateClick}
-                exchangeRequests={[]}
               />
             </div>
           ) : (
@@ -339,24 +361,30 @@ const ScheduleManagement = () => {
   );
 };
 
-// Enhanced Month View with better color coding
-const EnhancedMonthView = ({ schedule, onDateClick, exchangeRequests }) => {
+// Enhanced Month View Component with proper Monday calculation
+const EnhancedMonthView = ({ schedule, onDateClick }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
+  // Fixed Monday calculation
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    const startingDayOfWeek = firstDay.getDay();
+    
+    // Fixed Monday calculation - convert Sunday=0 to Sunday=6
+    let startingDayOfWeek = firstDay.getDay();
+    startingDayOfWeek = (startingDayOfWeek + 6) % 7; // Monday = 0
 
     const days = [];
     
+    // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
     
+    // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(new Date(year, month, day));
     }
@@ -370,7 +398,7 @@ const EnhancedMonthView = ({ schedule, onDateClick, exchangeRequests }) => {
 
   const isWeekend = (date) => {
     const day = date.getDay();
-    return day === 0 || day === 6;
+    return day === 0 || day === 6; // Sunday or Saturday
   };
 
   const isToday = (date) => {
@@ -384,7 +412,8 @@ const EnhancedMonthView = ({ schedule, onDateClick, exchangeRequests }) => {
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
 
-  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // Week days starting with Monday
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div>
@@ -398,7 +427,7 @@ const EnhancedMonthView = ({ schedule, onDateClick, exchangeRequests }) => {
           }}
           className="p-2 hover:bg-gray-100 rounded-full"
         >
-          ←
+          <ChevronLeft className="h-5 w-5" />
         </button>
         
         <h2 className="text-xl font-semibold">
@@ -413,7 +442,7 @@ const EnhancedMonthView = ({ schedule, onDateClick, exchangeRequests }) => {
           }}
           className="p-2 hover:bg-gray-100 rounded-full"
         >
-          →
+          <ChevronRight className="h-5 w-5" />
         </button>
       </div>
 

@@ -11,16 +11,19 @@ const WorkSchedule = () => {
   const [exchangeRequests, setExchangeRequests] = useState([]);
   const [showExchangeModal, setShowExchangeModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [viewMode, setViewMode] = useState('week'); // 'week' or 'month'
+  const [viewMode, setViewMode] = useState('month'); // Default to month view
 
-  // Generate week dates
+  // Fixed week calculation starting from Monday
   const getWeekDates = (date) => {
     const week = [];
     const startDate = new Date(date);
+    
+    // Get Monday of the current week - Fixed calculation
     const day = startDate.getDay();
     const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
     startDate.setDate(diff);
 
+    // Generate 7 days starting from Monday
     for (let i = 0; i < 7; i++) {
       const currentDate = new Date(startDate);
       currentDate.setDate(startDate.getDate() + i);
@@ -32,41 +35,58 @@ const WorkSchedule = () => {
   const weekDates = getWeekDates(currentWeek);
 
   useEffect(() => {
-    // Mock schedule data
-    setSchedule({
-      '2025-06-30': 'office',
-      '2025-07-01': 'remote',
-      '2025-07-02': 'office',
-      '2025-07-03': 'remote',
-      '2025-07-04': 'office',
-      '2025-07-05': 'remote',
-      '2025-07-07': 'office',
-      '2025-07-08': 'remote',
-      '2025-07-09': 'office',
-      '2025-07-10': 'remote',
-      '2025-07-11': 'office',
-      '2025-07-12': 'remote',
-      '2025-07-14': 'office',
-      '2025-07-15': 'remote',
-      '2025-07-16': 'office',
-      '2025-07-17': 'remote',
-      '2025-07-18': 'office',
-      '2025-07-19': 'remote'
-    });
-
-    setExchangeRequests([
-      {
-        id: 1,
-        from: 'John Doe',
-        fromEmail: 'john@company.com',
-        date: '2025-07-02',
-        currentLocation: 'office',
-        requestedLocation: 'remote',
-        reason: 'Doctor appointment',
-        status: 'pending'
-      }
-    ]);
+    fetchSchedule();
+    fetchExchangeRequests();
   }, []);
+
+  const fetchSchedule = async () => {
+    try {
+      // TODO: Replace with actual API call
+      // const response = await api.get('/schedule/my-schedule');
+      // setSchedule(response.data);
+      
+      // For now, load from localStorage to persist changes
+      const savedSchedule = localStorage.getItem(`schedule_${user?.id}`);
+      if (savedSchedule) {
+        setSchedule(JSON.parse(savedSchedule));
+      }
+    } catch (error) {
+      console.error('Error fetching schedule:', error);
+      setSchedule({});
+    }
+  };
+
+  const fetchExchangeRequests = async () => {
+    try {
+      // TODO: Replace with actual API call
+      // const response = await api.get('/schedule/exchange-requests');
+      // setExchangeRequests(response.data);
+      setExchangeRequests([]);
+    } catch (error) {
+      console.error('Error fetching exchange requests:', error);
+      setExchangeRequests([]);
+    }
+  };
+
+  const saveScheduleChange = async (date, location) => {
+    try {
+      // TODO: Replace with actual API call
+      // await api.post('/schedule/update', { date, location });
+      
+      // For now, save to localStorage
+      const newSchedule = {
+        ...schedule,
+        [date]: location
+      };
+      setSchedule(newSchedule);
+      localStorage.setItem(`schedule_${user?.id}`, JSON.stringify(newSchedule));
+      
+      console.log('Schedule saved:', { date, location });
+    } catch (error) {
+      console.error('Error saving schedule:', error);
+      alert('Failed to save schedule. Please try again.');
+    }
+  };
 
   const getLocationIcon = (location) => {
     switch (location) {
@@ -102,7 +122,7 @@ const WorkSchedule = () => {
 
   const isWeekend = (date) => {
     const day = date.getDay();
-    return day === 0 || day === 6;
+    return day === 0 || day === 6; // Sunday (0) or Saturday (6)
   };
 
   const formatDate = (date) => {
@@ -163,6 +183,7 @@ const WorkSchedule = () => {
           schedule={schedule}
           onDateClick={handleDateClick}
           exchangeRequests={exchangeRequests}
+          onScheduleUpdate={saveScheduleChange}
         />
       ) : (
         <>
@@ -180,7 +201,7 @@ const WorkSchedule = () => {
             </button>
             
             <h2 className="text-lg font-semibold">
-              {weekDates[0].toLocaleDateString()} - {weekDates[6].toLocaleDateString()}
+              Week of {weekDates[0].toLocaleDateString()} (Monday - Sunday)
             </h2>
             
             <button
@@ -195,7 +216,7 @@ const WorkSchedule = () => {
             </button>
           </div>
 
-          {/* Week Schedule Grid */}
+          {/* Week Schedule Grid - Starting with Monday */}
           <div className="grid grid-cols-7 gap-4 mb-8">
             {weekDates.map((date, index) => {
               const dateStr = formatDate(date);
@@ -302,11 +323,21 @@ const WorkSchedule = () => {
         </div>
       )}
 
+      {/* Show message when no schedule data */}
+      {Object.keys(schedule).length === 0 && (
+        <div className="bg-white shadow rounded-lg p-6 text-center">
+          <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Schedule Data</h3>
+          <p className="text-gray-600">Your work schedule will appear here once it's been set by an administrator.</p>
+        </div>
+      )}
+
       <ExchangeModal
         isOpen={showExchangeModal}
         onClose={() => setShowExchangeModal(false)}
         date={selectedDate}
         currentLocation={selectedDate ? schedule[selectedDate] : null}
+        onSave={saveScheduleChange}
       />
     </div>
   );

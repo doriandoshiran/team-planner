@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Calendar, Users, Settings } from 'lucide-react';
+import { Home, Calendar, CheckSquare, FolderOpen, Users, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
 const Sidebar = () => {
@@ -10,6 +10,8 @@ const Sidebar = () => {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'Work Schedule', href: '/schedule', icon: Calendar },
+    { name: 'Tasks', href: '/tasks', icon: CheckSquare },
+    { name: 'Projects', href: '/projects', icon: FolderOpen },
   ];
 
   // Add admin-only navigation items

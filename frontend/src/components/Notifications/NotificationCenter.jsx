@@ -16,46 +16,23 @@ const NotificationCenter = () => {
 
   const fetchNotifications = async () => {
     try {
-      const mockNotifications = [
-        {
-          id: 1,
-          type: 'exchange_request',
-          title: 'New Exchange Request',
-          message: 'John Doe wants to exchange July 2nd (Office → Remote)',
-          timestamp: new Date(Date.now() - 5 * 60 * 1000),
-          read: false,
-          actionable: true,
-          data: { requestId: 1, from: 'John Doe', date: '2025-07-02' }
-        },
-        {
-          id: 2,
-          type: 'exchange_approved',
-          title: 'Exchange Request Approved',
-          message: 'Your exchange request for July 3rd has been approved by Jane Smith',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          read: false,
-          actionable: false,
-          data: { date: '2025-07-03', approvedBy: 'Jane Smith' }
-        }
-      ];
-
-      const filteredNotifications = mockNotifications.filter(notification => {
-        if (user?.role === 'admin') {
-          return true;
-        } else {
-          return notification.type !== 'schedule_change' || notification.data.userId === user?.id;
-        }
-      });
-
-      setNotifications(filteredNotifications);
-      setUnreadCount(filteredNotifications.filter(n => !n.read).length);
+      // TODO: Replace with real API call when notification system is implemented
+      // const response = await api.get('/notifications');
+      // setNotifications(response.data);
+      
+      // For now, show empty notifications
+      setNotifications([]);
+      setUnreadCount(0);
     } catch (error) {
       console.error('Error fetching notifications:', error);
+      setNotifications([]);
+      setUnreadCount(0);
     }
   };
 
   const markAsRead = async (notificationId) => {
     try {
+      // TODO: API call to mark as read
       setNotifications(notifications.map(n => 
         n.id === notificationId ? { ...n, read: true } : n
       ));
@@ -82,7 +59,7 @@ const NotificationCenter = () => {
 
   const formatTimestamp = (timestamp) => {
     const now = new Date();
-    const diff = now - timestamp;
+    const diff = now - new Date(timestamp);
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
@@ -123,8 +100,10 @@ const NotificationCenter = () => {
 
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
-              <div className="p-4 text-center text-gray-500">
-                No notifications
+              <div className="p-8 text-center text-gray-500">
+                <Bell className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <p>No notifications yet</p>
+                <p className="text-sm">You'll see notifications here when there are schedule changes or exchange requests.</p>
               </div>
             ) : (
               notifications.map(notification => (
@@ -163,20 +142,6 @@ const NotificationCenter = () => {
               ))
             )}
           </div>
-
-          {notifications.length > 0 && (
-            <div className="p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setNotifications(notifications.map(n => ({ ...n, read: true })));
-                  setUnreadCount(0);
-                }}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                Mark all as read
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

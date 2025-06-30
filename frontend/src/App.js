@@ -8,6 +8,8 @@ import Dashboard from './pages/Dashboard';
 import WorkSchedule from './components/Schedule/WorkSchedule';
 import UserManagement from './components/Admin/UserManagement';
 import ScheduleManagement from './components/Admin/ScheduleManagement';
+import TaskList from './components/Tasks/TaskList';
+import ProjectList from './components/Projects/ProjectList';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
@@ -76,6 +78,8 @@ function App() {
               <Route index element={<Navigate to="/dashboard" />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="schedule" element={<WorkSchedule />} />
+              <Route path="tasks" element={<TaskList />} />
+              <Route path="projects" element={<ProjectList />} />
               <Route path="admin/users" element={
                 <AdminRoute>
                   <UserManagement />
