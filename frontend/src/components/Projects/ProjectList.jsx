@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Calendar, Users, FolderOpen } from 'lucide-react';
 import ProjectForm from './ProjectForm';
+import { projectService } from '../../services/projectService';
 
 const ProjectList = () => {
   const [projects, setProjects] = useState([]);
@@ -16,10 +17,8 @@ const ProjectList = () => {
   const fetchProjects = async () => {
     try {
       setLoading(true);
-      // TODO: Replace with real API call
-      // const response = await api.get('/projects');
-      // setProjects(response.data);
-      setProjects([]);
+      const projects = await projectService.getProjects();
+      setProjects(projects);
     } catch (error) {
       console.error('Error fetching projects:', error);
       setProjects([]);

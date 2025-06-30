@@ -57,9 +57,11 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://mongodb:27017/team-planne
 // Routes
 const authRoutes = require('./routes/auth');
 const taskRoutes = require('./routes/tasks');
+const projectRoutes = require('./routes/projects');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/projects', projectRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
