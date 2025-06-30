@@ -220,3 +220,24 @@ const TaskList = ({ projectId }) => {
                     <Plus className="w-4 h-4" />
                     Create Task
                   </button>
+)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Task Form Modal */}
+      {showTaskForm && (
+        <TaskForm
+          task={selectedTask}
+          projectId={projectId}
+          onSave={handleTaskSaved}
+          onClose={() => setShowTaskForm(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+export default TaskList;
