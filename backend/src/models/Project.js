@@ -5,57 +5,133 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Project name is required'],
     trim: true,
-    maxlength: [100, 'Project name cannot exceed 100 characters']
+    maxlength: [200, 'Name cannot exceed 200 characters']
   },
   description: {
     type: String,
     trim: true,
-    maxlength: [500, 'Description cannot exceed 500 characters']
+    maxlength: [2000, 'Description cannot exceed 2000 characters']
   },
   status: {
     type: String,
-    enum: ['planning', 'active', 'completed', 'on-hold'],
+    enum: ['planning', 'active', 'completed', 'onHold', 'cancelled'],
     default: 'planning'
   },
-  startDate: {
-    type: Date,
-    required: [true, 'Start date is required']
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
   },
-  endDate: {
+  startDate: {
     type: Date
   },
+  dueDate: {
+    type: Date
+  },
+  completedDate: {
+    type: Date
+  },
+  budget: {
+    allocated: { type: Number, default: 0 },
+    spent: { type: Number, default: 0 }
+  },
+  progress: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  },
   teamMembers: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    name: String,
+    role: {
+      type: String,
+      enum: ['lead', 'developer', 'designer', 'tester', 'analyst', 'member'],
+      default: 'member'
+    },
+    assignedDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  tasks: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'Task'
+  }],
+  milestones: [{
+    name: String,
+    description: String,
+    dueDate: Date,
+    completed: { type: Boolean, default: false },
+    completedDate: Date
+  }],
+  tags: [String],
+  client: {
+    name: String,
+    email: String,
+    company: String
+  },
+  attachments: [{
+    name: String,
+    url: String,
+    uploadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    uploadedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  comments: [{
+    text: String,
+    author: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    authorName: String,
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
   }],
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  color: {
-    type: String,
-    default: '#3B82F6'
-  },
-  budget: {
-    type: Number,
-    default: 0
+  department: String,
+  isArchived: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true
 });
 
-// Validate that end date is after start date
-projectSchema.pre('save', function(next) {
-  if (this.endDate && this.startDate && this.endDate < this.startDate) {
-    next(new Error('End date must be after start date'));
-  } else {
-    next();
-  }
+// Indexes for better performance
+projectSchema.index({ status: 1, createdBy: 1 });
+projectSchema.index({ dueDate: 1 });
+projectSchema.index({ 'teamMembers.userId': 1 });
+projectSchema.index({ tags: 1 });
+
+// Virtual for overdue status
+projectSchema.virtual('isOverdue').get(function() {
+  return this.dueDate && this.dueDate < new Date() && this.status !== 'completed';
 });
 
-// Index for faster queries
-projectSchema.index({ createdBy: 1, status: 1 });
-projectSchema.index({ teamMembers: 1 });
+// Calculate completion percentage based on tasks
+projectSchema.methods.calculateProgress = async function() {
+  if (this.tasks.length === 0) return 0;
+  
+  const Task = mongoose.model('Task');
+  const tasks = await Task.find({ _id: { $in: this.tasks } });
+  const completedTasks = tasks.filter(task => task.status === 'done');
+  
+  return Math.round((completedTasks.length / tasks.length) * 100);
+};
 
 module.exports = mongoose.model('Project', projectSchema);

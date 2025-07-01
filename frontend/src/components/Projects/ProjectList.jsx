@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Calendar, Users, FolderOpen } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import ProjectForm from './ProjectForm';
 import { projectService } from '../../services/projectService';
 
 const ProjectList = () => {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -29,39 +31,34 @@ const ProjectList = () => {
 
   const handleCreateProject = async (projectData) => {
     try {
-      // TODO: API call to create project
-      const newProject = {
-        _id: Date.now().toString(),
-        ...projectData,
-        createdAt: new Date().toISOString()
-      };
+      const newProject = await projectService.createProject(projectData);
       setProjects([newProject, ...projects]);
     } catch (error) {
       console.error('Error creating project:', error);
-      alert('Error creating project: ' + error.message);
+      alert(t('errors.creatingTask', { error: error.message }));
     }
   };
 
   const handleUpdateProject = async (projectData) => {
     try {
-      // TODO: API call to update project
+      const updatedProject = await projectService.updateProject(editingProject._id, projectData);
       setProjects(projects.map(project => 
-        project._id === editingProject._id ? { ...project, ...projectData } : project
+        project._id === editingProject._id ? updatedProject : project
       ));
     } catch (error) {
       console.error('Error updating project:', error);
-      alert('Error updating project: ' + error.message);
+      alert(t('errors.updatingTask', { error: error.message }));
     }
   };
 
   const handleDeleteProject = async (id) => {
-    if (window.confirm('Are you sure you want to delete this project?')) {
+    if (window.confirm(t('projects.deleteConfirm'))) {
       try {
-        // TODO: API call to delete project
+        await projectService.deleteProject(id);
         setProjects(projects.filter(project => project._id !== id));
       } catch (error) {
         console.error('Error deleting project:', error);
-        alert('Error deleting project: ' + error.message);
+        alert(t('errors.deletingTask', { error: error.message }));
       }
     }
   };
@@ -82,30 +79,30 @@ const ProjectList = () => {
   });
 
   if (loading) {
-    return <div className="flex justify-center items-center h-64">Loading projects...</div>;
+    return <div className="flex justify-center items-center h-64">{t('common.loading')}</div>;
   }
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('projects.title')}</h1>
         <button
           onClick={() => setIsFormOpen(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center space-x-2"
         >
           <Plus className="h-4 w-4" />
-          <span>Add Project</span>
+          <span>{t('projects.addProject')}</span>
         </button>
       </div>
 
       {/* Filter Tabs */}
       <div className="flex space-x-1 mb-6">
         {[
-          { key: 'all', label: 'All Projects' },
-          { key: 'planning', label: 'Planning' },
-          { key: 'active', label: 'Active' },
-          { key: 'completed', label: 'Completed' },
-          { key: 'on-hold', label: 'On Hold' }
+          { key: 'all', label: t('projects.allProjects') },
+          { key: 'planning', label: t('projects.planning') },
+          { key: 'active', label: t('projects.active') },
+          { key: 'completed', label: t('projects.completed') },
+          { key: 'on-hold', label: t('projects.onHold') }
         ].map(tab => (
           <button
             key={tab.key}
@@ -126,7 +123,13 @@ const ProjectList = () => {
         {filteredProjects.map(project => (
           <div key={project._id} className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">{project.name}</h3>
+              <div className="flex items-center space-x-2">
+                <div 
+                  className="w-4 h-4 rounded-full" 
+                  style={{ backgroundColor: project.color || '#3B82F6' }}
+                ></div>
+                <h3 className="text-lg font-semibold text-gray-900">{project.name}</h3>
+              </div>
               <div className="flex space-x-2">
                 <button
                   onClick={() => {
@@ -134,12 +137,14 @@ const ProjectList = () => {
                     setIsFormOpen(true);
                   }}
                   className="text-gray-400 hover:text-blue-600"
+                  title={t('common.edit')}
                 >
                   <Edit className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => handleDeleteProject(project._id)}
                   className="text-gray-400 hover:text-red-600"
+                  title={t('common.delete')}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -148,23 +153,49 @@ const ProjectList = () => {
 
             <p className="text-gray-600 mb-4">{project.description}</p>
 
+            {/* Progress Bar */}
+            {project.tasks && project.tasks.length > 0 && (
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-gray-600 mb-1">
+                  <span>{t('projects.progress')}</span>
+                  <span>{project.tasks.filter(t => t.completed).length}/{project.tasks.length}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full" 
+                    style={{ 
+                      width: `${project.tasks.length > 0 ? (project.tasks.filter(t => t.completed).length / project.tasks.length) * 100 : 0}%` 
+                    }}
+                  ></div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between mb-4">
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                {project.status}
+                {t(`projects.${project.status}`)}
               </span>
               
-              {project.dueDate && (
+              {project.endDate && (
                 <span className="flex items-center text-sm text-gray-500">
                   <Calendar className="h-4 w-4 mr-1" />
-                  {new Date(project.dueDate).toLocaleDateString()}
+                  {new Date(project.endDate).toLocaleDateString()}
                 </span>
               )}
             </div>
 
+            {/* Budget Display */}
+            {project.budget > 0 && (
+              <div className="mb-4 text-sm text-gray-600">
+                <span className="font-medium">{t('projects.budget')}: </span>
+                ${project.budget.toLocaleString()}
+              </div>
+            )}
+
             {project.teamMembers && project.teamMembers.length > 0 && (
               <div className="flex items-center text-sm text-gray-500">
                 <Users className="h-4 w-4 mr-1" />
-                <span>{project.teamMembers.length} team member(s)</span>
+                <span>{t('projects.teamMemberCount', { count: project.teamMembers.length })}</span>
               </div>
             )}
           </div>
@@ -174,7 +205,7 @@ const ProjectList = () => {
       {filteredProjects.length === 0 && (
         <div className="text-center py-12">
           <FolderOpen className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500">No projects found. Create your first project to get started!</p>
+          <p className="text-gray-500">{t('projects.noProjects')}</p>
         </div>
       )}
 

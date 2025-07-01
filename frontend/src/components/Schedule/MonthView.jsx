@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Building, Home, ArrowRightLeft } from 'lucid
 const MonthView = ({ schedule, onDateClick, exchangeRequests, onScheduleUpdate }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Fixed to start week from Monday
+  // FIXED to start week from Monday
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
@@ -12,9 +12,10 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests, onScheduleUpdate }
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
     
-    // Fixed Monday calculation - convert Sunday=0 to Sunday=6, Monday=0
+    // CORRECTED Monday calculation
     let startingDayOfWeek = firstDay.getDay();
-    startingDayOfWeek = (startingDayOfWeek + 6) % 7; // Monday = 0
+    // Convert Sunday=0 to Sunday=6, Monday=0
+    startingDayOfWeek = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
 
     const days = [];
     
@@ -43,17 +44,6 @@ const MonthView = ({ schedule, onDateClick, exchangeRequests, onScheduleUpdate }
         return <Home className="h-3 w-3" />;
       default:
         return null;
-    }
-  };
-
-  const getLocationColor = (location) => {
-    switch (location) {
-      case 'office':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'remote':
-        return 'bg-green-100 text-green-800 border-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 

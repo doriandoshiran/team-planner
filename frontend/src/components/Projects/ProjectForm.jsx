@@ -1,29 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Users, FolderOpen, Plus, Trash2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import api from '../../services/api';
 
 const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
-    name: project?.name || '',
-    description: project?.description || '',
-    status: project?.status || 'planning',
-    startDate: project?.startDate ? project.startDate.split('T')[0] : new Date().toISOString().split('T')[0],
-    endDate: project?.endDate ? project.endDate.split('T')[0] : '',
-    teamMembers: project?.teamMembers || [],
-    color: project?.color || '#3B82F6',
-    budget: project?.budget || 0
+    name: '',
+    description: '',
+    status: 'planning',
+    startDate: '',
+    endDate: '',
+    teamMembers: [],
+    color: '#3B82F6',
+    budget: 0
   });
 
   const [availableUsers, setAvailableUsers] = useState([]);
-  const [tasks, setTasks] = useState(project?.tasks || []);
-  const [newTask, setNewTask] = useState({ title: '', assignee: '', priority: 'medium' });
+  const [tasks, setTasks] = useState([]);
+  const [newTask, setNewTask] = useState({ title: '', assignee: '', priority: 'medium', completed: false });
   const [showTaskForm, setShowTaskForm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchUsers();
+      if (project) {
+        // Fixed date handling - properly extract date part
+        setFormData({
+          name: project.name || '',
+          description: project.description || '',
+          status: project.status || 'planning',
+          startDate: project.startDate ? project.startDate.split('T')[0] : '',
+          endDate: project.endDate ? project.endDate.split('T')[0] : '',
+          teamMembers: project.teamMembers || [],
+          color: project.color || '#3B82F6',
+          budget: project.budget || 0
+        });
+        setTasks(project.tasks || []);
+      } else {
+        // Reset form for new project
+        setFormData({
+          name: '',
+          description: '',
+          status: 'planning',
+          startDate: '',
+          endDate: '',
+          teamMembers: [],
+          color: '#3B82F6',
+          budget: 0
+        });
+        setTasks([]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, project]);
 
   const fetchUsers = async () => {
     try {
@@ -31,6 +60,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
       setAvailableUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
+      setAvailableUsers([]);
     }
   };
 
@@ -61,13 +91,19 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
   const handleAddTask = () => {
     if (newTask.title && newTask.assignee) {
       setTasks([...tasks, { ...newTask, id: Date.now() }]);
-      setNewTask({ title: '', assignee: '', priority: 'medium' });
+      setNewTask({ title: '', assignee: '', priority: 'medium', completed: false });
       setShowTaskForm(false);
     }
   };
 
   const handleRemoveTask = (taskId) => {
     setTasks(tasks.filter(task => task.id !== taskId));
+  };
+
+  const handleToggleTaskCompletion = (taskId) => {
+    setTasks(tasks.map(task => 
+      task.id === taskId ? { ...task, completed: !task.completed } : task
+    ));
   };
 
   const projectColors = [
@@ -82,7 +118,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">
-            {project ? 'Edit Project' : 'Create New Project'}
+            {project ? t('projects.editProject') : t('projects.createProject')}
           </h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="h-5 w-5" />
@@ -93,7 +129,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Project Name
+                {t('projects.projectName')}
               </label>
               <input
                 type="text"
@@ -101,14 +137,14 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 value={formData.name}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project name"
+                placeholder={t('projects.enterName')}
                 required
               />
             </div>
 
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
+                {t('projects.description')}
               </label>
               <textarea
                 name="description"
@@ -116,13 +152,13 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 onChange={handleChange}
                 rows="3"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter project description"
+                placeholder={t('projects.enterDescription')}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
+                {t('projects.status')}
               </label>
               <select
                 name="status"
@@ -130,16 +166,16 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="planning">Planning</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-                <option value="on-hold">On Hold</option>
+                <option value="planning">{t('projects.planning')}</option>
+                <option value="active">{t('projects.active')}</option>
+                <option value="completed">{t('projects.completed')}</option>
+                <option value="on-hold">{t('projects.onHold')}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Budget
+                {t('projects.budget')}
               </label>
               <input
                 type="number"
@@ -148,13 +184,13 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 onChange={handleChange}
                 min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter budget"
+                placeholder="0"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Start Date
+                {t('admin.startDate')}
               </label>
               <input
                 type="date"
@@ -168,7 +204,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                End Date
+                {t('admin.endDate')}
               </label>
               <input
                 type="date"
@@ -184,7 +220,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           {/* Color Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Project Color
+              {t('projects.color')}
             </label>
             <div className="flex space-x-2">
               {projectColors.map(color => (
@@ -204,7 +240,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           {/* Team Members */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Team Members
+              {t('projects.teamMembers')}
             </label>
             <div className="border border-gray-300 rounded-md p-3 max-h-32 overflow-y-auto">
               {availableUsers.map(user => (
@@ -215,7 +251,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                     onChange={() => handleTeamMemberToggle(user.id)}
                     className="rounded text-blue-600"
                   />
-                  <span className="text-sm">{user.name} - {user.department || 'No Dept'}</span>
+                  <span className="text-sm">{user.name} - {user.department || t('admin.department')}</span>
                 </label>
               ))}
             </div>
@@ -225,7 +261,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">
-                Project Tasks
+                {t('tasks.title')}
               </label>
               <button
                 type="button"
@@ -233,7 +269,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
               >
                 <Plus className="h-4 w-4" />
-                <span>Add Task</span>
+                <span>{t('tasks.addTask')}</span>
               </button>
             </div>
 
@@ -242,7 +278,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 <div className="grid grid-cols-3 gap-2">
                   <input
                     type="text"
-                    placeholder="Task title"
+                    placeholder={t('tasks.enterTitle')}
                     value={newTask.title}
                     onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
                     className="px-2 py-1 border border-gray-300 rounded text-sm"
@@ -252,7 +288,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                     onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
                     className="px-2 py-1 border border-gray-300 rounded text-sm"
                   >
-                    <option value="">Assign to...</option>
+                    <option value="">{t('tasks.selectAssignee')}</option>
                     {availableUsers.map(user => (
                       <option key={user.id} value={user.id}>{user.name}</option>
                     ))}
@@ -262,10 +298,10 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                     onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
                     className="px-2 py-1 border border-gray-300 rounded text-sm"
                   >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
+                    <option value="low">{t('tasks.low')}</option>
+                    <option value="medium">{t('tasks.medium')}</option>
+                    <option value="high">{t('tasks.high')}</option>
+                    <option value="urgent">{t('tasks.urgent')}</option>
                   </select>
                 </div>
                 <div className="flex justify-end space-x-2 mt-2">
@@ -274,14 +310,14 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                     onClick={() => setShowTaskForm(false)}
                     className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="button"
                     onClick={handleAddTask}
                     className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                   >
-                    Add
+                    {t('common.add')}
                   </button>
                 </div>
               </div>
@@ -289,18 +325,28 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
 
             <div className="border border-gray-300 rounded-md p-3 max-h-40 overflow-y-auto">
               {tasks.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center">No tasks added yet</p>
+                <p className="text-sm text-gray-500 text-center">{t('tasks.noTasks')}</p>
               ) : (
                 <div className="space-y-2">
                   {tasks.map(task => {
                     const assignee = availableUsers.find(u => u.id === task.assignee);
                     return (
                       <div key={task.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <div className="flex-1">
-                          <span className="text-sm font-medium">{task.title}</span>
-                          <span className="text-xs text-gray-500 ml-2">
-                            ({assignee?.name || 'Unassigned'} - {task.priority})
-                          </span>
+                        <div className="flex items-center space-x-2 flex-1">
+                          <input
+                            type="checkbox"
+                            checked={task.completed}
+                            onChange={() => handleToggleTaskCompletion(task.id)}
+                            className="rounded text-blue-600"
+                          />
+                          <div className="flex-1">
+                            <span className={`text-sm font-medium ${task.completed ? 'line-through text-gray-500' : ''}`}>
+                              {task.title}
+                            </span>
+                            <span className="text-xs text-gray-500 ml-2">
+                              ({assignee?.name || t('tasks.selectAssignee')} - {t(`tasks.${task.priority}`)})
+                            </span>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -323,13 +369,13 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
               onClick={onClose}
               className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
             >
-              {project ? 'Update Project' : 'Create Project'}
+              {project ? t('projects.updateProject') : t('projects.createProject')}
             </button>
           </div>
         </form>

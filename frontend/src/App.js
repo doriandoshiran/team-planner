@@ -11,6 +11,9 @@ import ScheduleManagement from './components/Admin/ScheduleManagement';
 import TaskList from './components/Tasks/TaskList';
 import ProjectList from './components/Projects/ProjectList';
 
+// Import i18n configuration
+import './i18n';
+
 // Protected Route Component
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();

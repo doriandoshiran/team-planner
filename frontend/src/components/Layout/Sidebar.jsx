@@ -2,23 +2,25 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Home, Calendar, CheckSquare, FolderOpen, Users, Settings } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const Sidebar = () => {
   const location = useLocation();
   const { isAdmin } = useAuth();
+  const { t } = useTranslation();
 
   const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: Home },
-    { name: 'Work Schedule', href: '/schedule', icon: Calendar },
-    { name: 'Tasks', href: '/tasks', icon: CheckSquare },
-    { name: 'Projects', href: '/projects', icon: FolderOpen },
+    { name: t('navigation.dashboard'), href: '/dashboard', icon: Home },
+    { name: t('navigation.schedule'), href: '/schedule', icon: Calendar },
+    { name: t('navigation.tasks'), href: '/tasks', icon: CheckSquare },
+    { name: t('navigation.projects'), href: '/projects', icon: FolderOpen },
   ];
 
   // Add admin-only navigation items
   if (isAdmin) {
     navigation.push(
-      { name: 'User Management', href: '/admin/users', icon: Users },
-      { name: 'Schedule Management', href: '/admin/schedules', icon: Settings }
+      { name: t('navigation.userManagement'), href: '/admin/users', icon: Users },
+      { name: t('navigation.scheduleManagement'), href: '/admin/schedules', icon: Settings }
     );
   }
 

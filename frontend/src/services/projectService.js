@@ -2,8 +2,13 @@ import api from './api';
 
 export const projectService = {
   // Get all projects
-  getProjects: async () => {
-    const response = await api.get('/projects');
+  getProjects: async (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.keys(filters).forEach(key => {
+      if (filters[key]) params.append(key, filters[key]);
+    });
+    
+    const response = await api.get(`/projects?${params}`);
     return response.data;
   },
 
@@ -13,7 +18,7 @@ export const projectService = {
     return response.data;
   },
 
-  // Create new project
+  // Create project
   createProject: async (projectData) => {
     const response = await api.post('/projects', projectData);
     return response.data;
@@ -31,9 +36,33 @@ export const projectService = {
     return response.data;
   },
 
-  // Get project tasks
-  getProjectTasks: async (projectId) => {
-    const response = await api.get(`/projects/${projectId}/tasks`);
+  // Add team member
+  addTeamMember: async (projectId, memberData) => {
+    const response = await api.post(`/projects/${projectId}/team`, memberData);
+    return response.data;
+  },
+
+  // Remove team member
+  removeTeamMember: async (projectId, userId) => {
+    const response = await api.delete(`/projects/${projectId}/team/${userId}`);
+    return response.data;
+  },
+
+  // Add comment
+  addComment: async (projectId, text) => {
+    const response = await api.post(`/projects/${projectId}/comments`, { text });
+    return response.data;
+  },
+
+  // Update progress
+  updateProgress: async (projectId, progress) => {
+    const response = await api.patch(`/projects/${projectId}/progress`, { progress });
+    return response.data;
+  },
+
+  // Archive project
+  archiveProject: async (projectId, archived = true) => {
+    const response = await api.patch(`/projects/${projectId}/archive`, { archived });
     return response.data;
   }
 };

@@ -37,18 +37,21 @@ const WorkSchedule = () => {
   useEffect(() => {
     fetchSchedule();
     fetchExchangeRequests();
-  }, []);
+  }, [user]);
 
   const fetchSchedule = async () => {
     try {
-      // TODO: Replace with actual API call
-      // const response = await api.get('/schedule/my-schedule');
-      // setSchedule(response.data);
-      
-      // For now, load from localStorage to persist changes
+      // Load from shared storage that admin sets
       const savedSchedule = localStorage.getItem(`schedule_${user?.id}`);
       if (savedSchedule) {
         setSchedule(JSON.parse(savedSchedule));
+      } else {
+        // Also check shared schedules
+        const sharedSchedules = localStorage.getItem('shared_schedules');
+        if (sharedSchedules) {
+          const allSchedules = JSON.parse(sharedSchedules);
+          setSchedule(allSchedules[user?.id] || {});
+        }
       }
     } catch (error) {
       console.error('Error fetching schedule:', error);
@@ -269,58 +272,6 @@ const WorkSchedule = () => {
             })}
           </div>
         </>
-      )}
-
-      {/* Exchange Requests Section */}
-      {exchangeRequests.length > 0 && (
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-            <ArrowRightLeft className="h-5 w-5" />
-            <span>Exchange Requests</span>
-          </h3>
-          
-          <div className="space-y-4">
-            {exchangeRequests.map(request => (
-              <div key={request.id} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-medium text-gray-900">{request.from}</div>
-                    <div className="text-sm text-gray-600">{request.fromEmail}</div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      Date: {new Date(request.date).toLocaleDateString()}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      Wants to change: <span className="font-medium">{request.currentLocation}</span> → <span className="font-medium">{request.requestedLocation}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 mt-1">
-                      Reason: {request.reason}
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2">
-                    {request.status === 'pending' && (
-                      <>
-                        <button className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">
-                          Accept
-                        </button>
-                        <button className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
-                          Decline
-                        </button>
-                      </>
-                    )}
-                    {request.status !== 'pending' && (
-                      <span className={`px-3 py-1 rounded text-sm ${
-                        request.status === 'accepted' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {request.status}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* Show message when no schedule data */}
