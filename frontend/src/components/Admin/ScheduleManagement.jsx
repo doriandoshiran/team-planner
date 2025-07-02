@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Users, Building, Home, Save, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, Users, Building, Home, Save, X, ChevronLeft, ChevronRight, Plane, Heart, Stethoscope, HelpCircle } from 'lucide-react';
 import api from '../../services/api';
 
 const ScheduleManagement = () => {
@@ -11,6 +11,7 @@ const ScheduleManagement = () => {
   const [selectedLocation, setSelectedLocation] = useState('');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedDate, setSelectedDate] = useState(null);
+  const [dayOffReason, setDayOffReason] = useState('');
 
   useEffect(() => {
     fetchEmployees();
@@ -21,9 +22,9 @@ const ScheduleManagement = () => {
       setLoading(true);
       const response = await api.get('/auth/users');
       setEmployees(response.data);
-      
-      // Load shared schedules (not admin-specific)
-      const savedSchedules = localStorage.getItem('shared_schedules');
+
+      // Load schedules from localStorage for persistence
+      const savedSchedules = localStorage.getItem('admin_schedules');
       if (savedSchedules) {
         setSchedules(JSON.parse(savedSchedules));
       }
@@ -35,13 +36,8 @@ const ScheduleManagement = () => {
     }
   };
 
-  // Save to shared storage that users can access
   const saveSchedulesToStorage = (newSchedules) => {
-    localStorage.setItem('shared_schedules', JSON.stringify(newSchedules));
-    // Also save individual user schedules
-    Object.keys(newSchedules).forEach(userId => {
-      localStorage.setItem(`schedule_${userId}`, JSON.stringify(newSchedules[userId]));
-    });
+    localStorage.setItem('admin_schedules', JSON.stringify(newSchedules));
   };
 
   const handleEmployeeSelect = (employee) => {
@@ -56,45 +52,67 @@ const ScheduleManagement = () => {
   const handleLocationSelect = (location) => {
     setSelectedLocation(location);
     if (selectedDate) {
-      applySingleDay(selectedDate, location);
-      setShowDateRangeModal(false);
-      setSelectedDate(null);
+      if (location === 'dayoff') {
+        // For day-off, always show modal to select reason
+        setShowDateRangeModal(true);
+      } else {
+        applySingleDay(selectedDate, location);
+        setShowDateRangeModal(false);
+        setSelectedDate(null);
+      }
     } else {
       setShowDateRangeModal(true);
     }
   };
 
-  const applySingleDay = (date, location) => {
+  const applySingleDay = (date, location, reason = '') => {
     if (!selectedEmployee) return;
-    
+
+    const scheduleData = location === 'dayoff' && reason
+      ? { type: location, reason }
+      : location;
+
     const newSchedules = {
       ...schedules,
       [selectedEmployee.id]: {
         ...schedules[selectedEmployee.id],
-        [date]: location
+        [date]: scheduleData
       }
     };
-    
+
     setSchedules(newSchedules);
     saveSchedulesToStorage(newSchedules);
   };
 
-  // Fixed date range application to properly include Mondays
+  // Fixed date range application
   const applyDateRange = () => {
     if (!selectedEmployee || !dateRange.start || !dateRange.end || !selectedLocation) return;
 
-    const start = new Date(dateRange.start);
-    const end = new Date(dateRange.end);
+    // Parse as local dates to avoid timezone issues
+    const startParts = dateRange.start.split('-').map(Number);
+    const endParts = dateRange.end.split('-').map(Number);
+
+    const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+    const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
     const newSchedule = { ...schedules[selectedEmployee.id] };
 
-    // Fixed loop to properly include all weekdays including Mondays
-    const currentDate = new Date(start);
+    // Create schedule data based on type
+    const scheduleData = selectedLocation === 'dayoff' && dayOffReason
+      ? { type: selectedLocation, reason: dayOffReason }
+      : selectedLocation;
+
+    // Properly iterate through all dates (inclusive)
+    let currentDate = new Date(start);
     while (currentDate <= end) {
       const dayOfWeek = currentDate.getDay();
-      // Include Monday (1) through Friday (5), exclude Saturday (6) and Sunday (0)
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+      // For vacation and day-off, include all days. For office/remote, only weekdays
+      if (
+        selectedLocation === 'vacation' ||
+        selectedLocation === 'dayoff' ||
+        (dayOfWeek !== 0 && dayOfWeek !== 6)
+      ) {
         const dateStr = currentDate.toISOString().split('T')[0];
-        newSchedule[dateStr] = selectedLocation;
+        newSchedule[dateStr] = scheduleData;
       }
       currentDate.setDate(currentDate.getDate() + 1);
     }
@@ -103,7 +121,7 @@ const ScheduleManagement = () => {
       ...schedules,
       [selectedEmployee.id]: newSchedule
     };
-    
+
     setSchedules(newSchedules);
     saveSchedulesToStorage(newSchedules);
 
@@ -112,6 +130,7 @@ const ScheduleManagement = () => {
     setDateRange({ start: '', end: '' });
     setSelectedLocation('');
     setSelectedDate(null);
+    setDayOffReason('');
   };
 
   const getEmployeeSchedule = () => {
@@ -120,11 +139,60 @@ const ScheduleManagement = () => {
 
   const getScheduleStats = (employeeId) => {
     const schedule = schedules[employeeId] || {};
-    const total = Object.keys(schedule).length;
-    const office = Object.values(schedule).filter(loc => loc === 'office').length;
-    const remote = Object.values(schedule).filter(loc => loc === 'remote').length;
-    
-    return { total, office, remote };
+    const stats = {
+      office: 0,
+      remote: 0,
+      vacation: 0,
+      dayoff: 0,
+      total: 0
+    };
+
+    Object.values(schedule).forEach(entry => {
+      if (typeof entry === 'object' && entry.type) {
+        stats[entry.type]++;
+      } else if (typeof entry === 'string') {
+        stats[entry]++;
+      }
+      stats.total++;
+    });
+
+    return stats;
+  };
+
+  const getLocationIcon = (location) => {
+    if (typeof location === 'object' && location.type === 'dayoff') {
+      switch (location.reason) {
+        case 'illness': return <Stethoscope className="h-3 w-3" />;
+        case 'family': return <Heart className="h-3 w-3" />;
+        default: return <HelpCircle className="h-3 w-3" />;
+      }
+    }
+
+    switch (location) {
+      case 'office': return <Building className="h-3 w-3" />;
+      case 'remote': return <Home className="h-3 w-3" />;
+      case 'vacation': return <Plane className="h-3 w-3" />;
+      case 'dayoff': return <HelpCircle className="h-3 w-3" />;
+      default: return null;
+    }
+  };
+
+  const getLocationColor = (location) => {
+    const locationType = typeof location === 'object' ? location.type : location;
+    switch (locationType) {
+      case 'office': return 'bg-blue-600 text-white';
+      case 'remote': return 'bg-green-600 text-white';
+      case 'vacation': return 'bg-purple-600 text-white';
+      case 'dayoff': return 'bg-orange-600 text-white';
+      default: return 'bg-gray-600 text-white';
+    }
+  };
+
+  const getLocationLabel = (location) => {
+    if (typeof location === 'object' && location.type === 'dayoff') {
+      return `Day-off (${location.reason})`;
+    }
+    return location ? location.charAt(0).toUpperCase() + location.slice(1) : '';
   };
 
   if (loading) {
@@ -156,6 +224,22 @@ const ScheduleManagement = () => {
             <Home className="h-4 w-4" />
             <span>Set Remote Days</span>
           </button>
+          <button
+            onClick={() => handleLocationSelect('vacation')}
+            disabled={!selectedEmployee}
+            className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <Plane className="h-4 w-4" />
+            <span>Set Vacation</span>
+          </button>
+          <button
+            onClick={() => handleLocationSelect('dayoff')}
+            disabled={!selectedEmployee}
+            className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 disabled:opacity-50 flex items-center space-x-2"
+          >
+            <Heart className="h-4 w-4" />
+            <span>Set Day-off</span>
+          </button>
         </div>
       </div>
 
@@ -167,33 +251,47 @@ const ScheduleManagement = () => {
               <Users className="h-5 w-5" />
               <span>Employees</span>
             </h3>
-            
+
             <div className="space-y-2">
               {employees.map(employee => {
                 const stats = getScheduleStats(employee.id);
                 const isSelected = selectedEmployee?.id === employee.id;
-                
+
                 return (
                   <div
                     key={employee.id}
                     onClick={() => handleEmployeeSelect(employee)}
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                      isSelected 
-                        ? 'bg-blue-100 border-2 border-blue-500' 
+                      isSelected
+                        ? 'bg-blue-100 border-2 border-blue-500'
                         : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
                     }`}
                   >
                     <div className="font-medium text-gray-900">{employee.name}</div>
                     <div className="text-sm text-gray-600">{employee.department || 'No Department'}</div>
-                    
+
                     {stats.total > 0 && (
-                      <div className="flex space-x-2 mt-2 text-xs">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          Office: {stats.office}
-                        </span>
-                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded">
-                          Remote: {stats.remote}
-                        </span>
+                      <div className="grid grid-cols-2 gap-1 mt-2">
+                        {stats.office > 0 && (
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+                            Office: {stats.office}
+                          </span>
+                        )}
+                        {stats.remote > 0 && (
+                          <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
+                            Remote: {stats.remote}
+                          </span>
+                        )}
+                        {stats.vacation > 0 && (
+                          <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-xs">
+                            Vacation: {stats.vacation}
+                          </span>
+                        )}
+                        {stats.dayoff > 0 && (
+                          <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs">
+                            Day-off: {stats.dayoff}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -219,13 +317,16 @@ const ScheduleManagement = () => {
                   Schedule for {selectedEmployee.name}
                 </h3>
                 <div className="text-sm text-gray-600">
-                  Click on any day to set work location, or use the buttons above for date ranges
+                  Click on any day to set work location
                 </div>
               </div>
 
               <EnhancedMonthView
                 schedule={getEmployeeSchedule()}
                 onDateClick={handleDateClick}
+                getLocationIcon={getLocationIcon}
+                getLocationColor={getLocationColor}
+                getLocationLabel={getLocationLabel}
               />
             </div>
           ) : (
@@ -252,6 +353,7 @@ const ScheduleManagement = () => {
                   setSelectedDate(null);
                   setSelectedLocation('');
                   setDateRange({ start: '', end: '' });
+                  setDayOffReason('');
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -270,35 +372,88 @@ const ScheduleManagement = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Work Location
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
+                {selectedLocation !== 'dayoff' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Work Location
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => {
+                          applySingleDay(selectedDate, 'office');
+                          setShowDateRangeModal(false);
+                          setSelectedDate(null);
+                        }}
+                        className="flex items-center justify-center space-x-2 p-3 border-2 border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                      >
+                        <Building className="h-5 w-5 text-blue-600" />
+                        <span>Office</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          applySingleDay(selectedDate, 'remote');
+                          setShowDateRangeModal(false);
+                          setSelectedDate(null);
+                        }}
+                        className="flex items-center justify-center space-x-2 p-3 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors"
+                      >
+                        <Home className="h-5 w-5 text-green-600" />
+                        <span>Remote</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          applySingleDay(selectedDate, 'vacation');
+                          setShowDateRangeModal(false);
+                          setSelectedDate(null);
+                        }}
+                        className="flex items-center justify-center space-x-2 p-3 border-2 border-purple-200 rounded-lg hover:bg-purple-50 transition-colors"
+                      >
+                        <Plane className="h-5 w-5 text-purple-600" />
+                        <span>Vacation</span>
+                      </button>
+                      <button
+                        onClick={() => setSelectedLocation('dayoff')}
+                        className="flex items-center justify-center space-x-2 p-3 border-2 border-orange-200 rounded-lg hover:bg-orange-50 transition-colors"
+                      >
+                        <Heart className="h-5 w-5 text-orange-600" />
+                        <span>Day-off</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Day-off Reason
+                      </label>
+                      <select
+                        value={dayOffReason}
+                        onChange={(e) => setDayOffReason(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select reason...</option>
+                        <option value="illness">Illness</option>
+                        <option value="family">Family Issues</option>
+                        <option value="personal">Personal</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
                     <button
                       onClick={() => {
-                        applySingleDay(selectedDate, 'office');
-                        setShowDateRangeModal(false);
-                        setSelectedDate(null);
+                        if (dayOffReason) {
+                          applySingleDay(selectedDate, 'dayoff', dayOffReason);
+                          setShowDateRangeModal(false);
+                          setSelectedDate(null);
+                          setDayOffReason('');
+                        }
                       }}
-                      className="flex items-center justify-center space-x-2 p-3 border-2 border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                      disabled={!dayOffReason}
+                      className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50"
                     >
-                      <Building className="h-5 w-5 text-blue-600" />
-                      <span>Office</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        applySingleDay(selectedDate, 'remote');
-                        setShowDateRangeModal(false);
-                        setSelectedDate(null);
-                      }}
-                      className="flex items-center justify-center space-x-2 p-3 border-2 border-green-200 rounded-lg hover:bg-green-50 transition-colors"
-                    >
-                      <Home className="h-5 w-5 text-green-600" />
-                      <span>Remote</span>
+                      Apply Day-off
                     </button>
                   </div>
-                </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -307,9 +462,33 @@ const ScheduleManagement = () => {
                     <strong>Employee:</strong> {selectedEmployee?.name}
                   </div>
                   <div className="text-sm text-blue-800">
-                    <strong>Location:</strong> {selectedLocation === 'office' ? 'Office' : 'Remote'}
+                    <strong>Location:</strong> {
+                      selectedLocation === 'office' ? 'Office' :
+                        selectedLocation === 'remote' ? 'Remote' :
+                          selectedLocation === 'vacation' ? 'Vacation' :
+                            selectedLocation === 'dayoff' ? 'Day-off' : ''
+                    }
                   </div>
                 </div>
+
+                {selectedLocation === 'dayoff' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Day-off Reason
+                    </label>
+                    <select
+                      value={dayOffReason}
+                      onChange={(e) => setDayOffReason(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select reason...</option>
+                      <option value="illness">Illness</option>
+                      <option value="family">Family Issues</option>
+                      <option value="personal">Personal</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -336,12 +515,19 @@ const ScheduleManagement = () => {
                   </div>
                 </div>
 
+                <div className="text-sm text-gray-600">
+                  {selectedLocation === 'vacation' || selectedLocation === 'dayoff'
+                    ? 'This will apply to all days in the range (including weekends)'
+                    : 'This will apply to weekdays only (Monday-Friday)'}
+                </div>
+
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
                     onClick={() => {
                       setShowDateRangeModal(false);
                       setSelectedLocation('');
                       setDateRange({ start: '', end: '' });
+                      setDayOffReason('');
                     }}
                     className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
                   >
@@ -349,7 +535,7 @@ const ScheduleManagement = () => {
                   </button>
                   <button
                     onClick={applyDateRange}
-                    disabled={!dateRange.start || !dateRange.end}
+                    disabled={!dateRange.start || !dateRange.end || (selectedLocation === 'dayoff' && !dayOffReason)}
                     className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
                   >
                     <Save className="h-4 w-4" />
@@ -365,35 +551,33 @@ const ScheduleManagement = () => {
   );
 };
 
-// Fixed Enhanced Month View Component - CORRECTED Monday calculation
-const EnhancedMonthView = ({ schedule, onDateClick }) => {
+// Enhanced Month View Component
+const EnhancedMonthView = ({ schedule, onDateClick, getLocationIcon, getLocationColor, getLocationLabel }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // FIXED Monday calculation - this was the main issue
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    
-    // CORRECTED: Proper Monday-first calculation
+
+    // Fixed Monday calculation
     let startingDayOfWeek = firstDay.getDay();
-    // Convert Sunday=0 to Sunday=6, Monday=0
-    startingDayOfWeek = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
+    startingDayOfWeek = (startingDayOfWeek + 6) % 7; // Monday = 0
 
     const days = [];
-    
+
     // Add empty cells for days before the first day of the month
     for (let i = 0; i < startingDayOfWeek; i++) {
       days.push(null);
     }
-    
+
     // Add all days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       days.push(new Date(year, month, day));
     }
-    
+
     return days;
   };
 
@@ -434,11 +618,11 @@ const EnhancedMonthView = ({ schedule, onDateClick }) => {
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        
+
         <h2 className="text-xl font-semibold">
           {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
         </h2>
-        
+
         <button
           onClick={() => {
             const nextMonth = new Date(currentDate);
@@ -458,7 +642,7 @@ const EnhancedMonthView = ({ schedule, onDateClick }) => {
             {day}
           </div>
         ))}
-        
+
         {days.map((date, index) => {
           if (!date) {
             return <div key={index} className="p-2 h-20"></div>;
@@ -469,43 +653,38 @@ const EnhancedMonthView = ({ schedule, onDateClick }) => {
           const weekend = isWeekend(date);
           const today = isToday(date);
 
+          // Get background color based on location type
+          let bgColor = '';
+          if (location) {
+            const locationType = typeof location === 'object' ? location.type : location;
+            switch (locationType) {
+              case 'office': bgColor = 'bg-blue-100 hover:bg-blue-200'; break;
+              case 'remote': bgColor = 'bg-green-100 hover:bg-green-200'; break;
+              case 'vacation': bgColor = 'bg-purple-100 hover:bg-purple-200'; break;
+              case 'dayoff': bgColor = 'bg-orange-100 hover:bg-orange-200'; break;
+            }
+          }
+
           return (
             <div
               key={index}
-              onClick={() => !weekend && onDateClick(date)}
+              onClick={() => onDateClick(date)}
               className={`p-2 h-20 border border-gray-200 cursor-pointer relative transition-all ${
                 today ? 'ring-2 ring-blue-500' : ''
-              } ${weekend ? 'bg-gray-100 cursor-not-allowed' : 'hover:bg-gray-50'} ${
-                location === 'office' ? 'bg-blue-100 hover:bg-blue-200' : 
-                location === 'remote' ? 'bg-green-100 hover:bg-green-200' : ''
-              }`}
+              } ${weekend ? 'bg-gray-100' : 'hover:bg-gray-50'} ${bgColor}`}
             >
               <div className="flex justify-between items-start h-full">
                 <span className={`text-sm ${today ? 'font-bold text-blue-600' : 'text-gray-900'}`}>
                   {date.getDate()}
                 </span>
               </div>
-              
-              {!weekend && location && (
+
+              {location && (
                 <div className="absolute bottom-1 left-1 right-1">
-                  <div className={`text-center text-xs font-medium py-1 rounded ${
-                    location === 'office' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-green-600 text-white'
-                  }`}>
-                    {location === 'office' ? (
-                      <Building className="h-3 w-3 inline mr-1" />
-                    ) : (
-                      <Home className="h-3 w-3 inline mr-1" />
-                    )}
-                    {location.charAt(0).toUpperCase() + location.slice(1)}
+                  <div className={`text-center text-xs font-medium py-1 rounded flex items-center justify-center ${getLocationColor(location)}`}>
+                    {getLocationIcon(location)}
+                    <span className="ml-1">{getLocationLabel(location)}</span>
                   </div>
-                </div>
-              )}
-              
-              {weekend && (
-                <div className="absolute bottom-1 left-1 right-1 text-center text-xs text-gray-400">
-                  Weekend
                 </div>
               )}
             </div>
@@ -526,6 +705,18 @@ const EnhancedMonthView = ({ schedule, onDateClick }) => {
             <Home className="h-2 w-2 text-white" />
           </div>
           <span>Remote</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 bg-purple-600 rounded flex items-center justify-center">
+            <Plane className="h-2 w-2 text-white" />
+          </div>
+          <span>Vacation</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 bg-orange-600 rounded flex items-center justify-center">
+            <Heart className="h-2 w-2 text-white" />
+          </div>
+          <span>Day-off</span>
         </div>
         <div className="flex items-center space-x-2">
           <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded"></div>
