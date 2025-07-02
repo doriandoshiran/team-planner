@@ -14,12 +14,15 @@ const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
     
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      'http://localhost',
-      'http://127.0.0.1'
-    ];
+    // Get allowed origins from environment variable
+    const allowedOrigins = process.env.ALLOWED_ORIGINS 
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : [
+          'http://localhost:3000',
+          'http://127.0.0.1:3000',
+          'http://10.212.243.37:3000',
+          'http://10.212.243.37'
+        ];
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
@@ -68,7 +71,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    cors_origins: process.env.ALLOWED_ORIGINS || 'default'
   });
 });
 
@@ -88,7 +92,10 @@ app.use((req, res) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`CORS Origins: ${process.env.ALLOWED_ORIGINS || 'default'}`);
 });
