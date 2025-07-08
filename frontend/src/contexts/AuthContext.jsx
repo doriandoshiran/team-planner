@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/authService';
+import api from '../services/api';
 
 const AuthContext = createContext();
 
@@ -14,54 +14,77 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const currentUser = authService.getCurrentUser();
-    if (currentUser) {
-      setUser(currentUser);
-    }
-    setLoading(false);
+    checkAuthStatus();
   }, []);
 
-  const login = async (credentials) => {
+  const checkAuthStatus = () => {
     try {
-      console.log('Frontend: Attempting login with:', credentials);
-      const data = await authService.login(credentials);
-      console.log('Frontend: Login successful, received:', data);
-      setUser(data.user);
-      return data;
+      const token = localStorage.getItem('token');
+      const userData = localStorage.getItem('user');
+      
+      if (token && userData) {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        setIsAuthenticated(true);
+        console.log('User authenticated from localStorage:', parsedUser);
+      } else {
+        setIsAuthenticated(false);
+        setUser(null);
+      }
     } catch (error) {
-      console.error('Frontend: Login failed:', error);
-      throw error;
+      console.error('Auth check error:', error);
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setIsAuthenticated(false);
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Admin-only registration
-  const registerUser = async (userData) => {
+  const login = async (credentials) => {
     try {
-      if (user?.role !== 'admin') {
-        throw new Error('Only administrators can create user accounts');
+      console.log('Attempting login with:', credentials.email);
+      const response = await api.post('/auth/login', credentials);
+      
+      if (response.data.token && response.data.user) {
+        // Store authentication data
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        
+        // Update state
+        setUser(response.data.user);
+        setIsAuthenticated(true);
+        
+        console.log('Login successful, user set:', response.data.user);
+        return { success: true, user: response.data.user };
+      } else {
+        throw new Error('Invalid login response');
       }
-      const data = await authService.adminRegister(userData);
-      return data;
     } catch (error) {
-      throw error;
+      console.error('Login error:', error);
+      return { success: false, message: error.response?.data?.message || 'Login failed' };
     }
   };
 
   const logout = () => {
-    authService.logout();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setUser(null);
+    setIsAuthenticated(false);
+    console.log('User logged out');
   };
 
   const value = {
     user,
+    isAuthenticated,
+    loading,
     login,
-    registerUser, // Admin-only function
     logout,
-    isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
-    loading
+    isAdmin: user?.role === 'admin'
   };
 
   return (

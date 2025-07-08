@@ -1,17 +1,13 @@
 import axios from 'axios';
 
-// Dynamic API URL detection
+// Force localhost for local development
 const getApiUrl = () => {
-  // If we're on localhost, use localhost
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:5000/api';
-  }
-  // Otherwise, use the same host as the frontend but port 5000
-  return `http://${window.location.hostname}:5000/api`;
+  return 'http://localhost:5000/api';
 };
 
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || getApiUrl(),
+  baseURL: getApiUrl(),
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -22,25 +18,37 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      config.headers['x-auth-token'] = token;
+      console.log('API: Token added to request for', config.url);
     }
     return config;
   },
   (error) => {
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
 
 // Response interceptor for error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    return response;
+  },
   (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid
+    console.error('API Error:', {
+      message: error.message,
+      status: error.response?.status,
+      url: error.config?.url,
+      data: error.response?.data
+    });
+
+    // Only clear auth on 401 for protected routes, not login
+    if (error.response?.status === 401 && error.config?.url !== '/auth/login') {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
+
     return Promise.reject(error);
   }
 );

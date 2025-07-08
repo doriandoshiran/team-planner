@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, User, Flag, FolderOpen } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../services/api';
 
 const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
-  // Initial form state
+  const { user, isAuthenticated } = useAuth();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -13,7 +14,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
     dueDate: '',
     assignee: '',
     project: '',
-    estimatedHours: 0,
     tags: []
   });
 
@@ -21,10 +21,10 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
   const [availableProjects, setAvailableProjects] = useState([]);
   const [newTag, setNewTag] = useState('');
   const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
 
-  // Reset form when opening or switching task
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isAuthenticated) {
       setFormData({
         title: task?.title || '',
         description: task?.description || '',
@@ -32,32 +32,41 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
         status: task?.status || 'todo',
         startDate: task?.startDate ? task.startDate.split('T')[0] : new Date().toISOString().split('T')[0],
         dueDate: task?.dueDate ? task.dueDate.split('T')[0] : '',
-        assignee: task?.assignee?._id || task?.assignee || '',
+        assignee: task?.userId?._id || task?.userId || user?.id || '',
         project: task?.project?._id || task?.project || '',
-        estimatedHours: task?.estimatedHours || 0,
         tags: task?.tags || []
       });
       setErrors({});
       fetchData();
     }
-    // eslint-disable-next-line
-  }, [isOpen, task]);
+  }, [isOpen, task, isAuthenticated, user]);
 
-  // Fetch users and projects
   const fetchData = async () => {
+    if (!isAuthenticated) return;
+    
     try {
+      console.log('TaskForm: Fetching data...');
       const [usersResponse, projectsResponse] = await Promise.all([
-        api.get('/auth/users'),
-        api.get('/projects').catch(() => ({ data: [] }))
+        api.get('/auth/users').catch(err => {
+          console.error('Error fetching users:', err);
+          return { data: [] };
+        }),
+        api.get('/projects').catch(err => {
+          console.error('Error fetching projects:', err);
+          return { data: [] };
+        })
       ]);
+      
+      console.log('TaskForm: Users fetched:', usersResponse.data.length);
+      console.log('TaskForm: Projects fetched:', projectsResponse.data.length);
+      
       setAvailableUsers(usersResponse.data);
       setAvailableProjects(projectsResponse.data);
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('TaskForm: Error fetching data:', error);
     }
   };
 
-  // Handle form field changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -66,11 +75,10 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
     }));
     setErrors(prev => ({
       ...prev,
-      [name]: undefined // Clear error on change
+      [name]: undefined
     }));
   };
 
-  // Add tag on Enter
   const handleAddTag = (e) => {
     if (e.key === 'Enter' && newTag.trim()) {
       e.preventDefault();
@@ -82,7 +90,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
     }
   };
 
-  // Remove tag by index
   const handleRemoveTag = (index) => {
     setFormData(prev => ({
       ...prev,
@@ -90,7 +97,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
     }));
   };
 
-  // Priority color for select
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'urgent': return 'text-red-600';
@@ -101,30 +107,52 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
     }
   };
 
-  // Validate required fields
   const validate = () => {
     const newErrors = {};
-    if (!formData.title) newErrors.title = "Title is required";
+    if (!formData.title.trim()) newErrors.title = "Title is required";
     if (!formData.assignee) newErrors.assignee = "Assignee is required";
     if (!formData.startDate) newErrors.startDate = "Start date is required";
     if (!formData.dueDate) newErrors.dueDate = "Due date is required";
     return newErrors;
   };
 
-  // Handle form submit with mapping for backend
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!isAuthenticated) {
+      alert('You must be logged in to create tasks');
+      return;
+    }
+    
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
+    
+    setLoading(true);
     setErrors({});
-    // Map assignee to userId for backend compatibility
-    const payload = { ...formData, userId: formData.assignee };
-    delete payload.assignee;
-    onSubmit(payload);
-    onClose();
+    
+    try {
+      console.log('TaskForm: Submitting task...', formData);
+      
+      // Map assignee to userId for backend compatibility
+      const payload = { 
+        ...formData, 
+        userId: formData.assignee 
+      };
+      delete payload.assignee;
+      
+      console.log('TaskForm: Payload:', payload);
+      
+      await onSubmit(payload);
+      onClose();
+    } catch (error) {
+      console.error('TaskForm: Submit error:', error);
+      setErrors({ submit: error.response?.data?.message || 'Failed to save task' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -142,7 +170,12 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Title */}
+          {errors.submit && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              {errors.submit}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Task Title
@@ -159,7 +192,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             {errors.title && <p className="text-red-600 text-xs mt-1">{errors.title}</p>}
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Description
@@ -174,7 +206,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             />
           </div>
 
-          {/* Assignee & Project */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -219,7 +250,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             </div>
           </div>
 
-          {/* Priority & Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -256,7 +286,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             </div>
           </div>
 
-          {/* Dates */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -292,24 +321,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             </div>
           </div>
 
-          {/* Estimated Hours */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Estimated Hours
-            </label>
-            <input
-              type="number"
-              name="estimatedHours"
-              value={formData.estimatedHours}
-              onChange={handleChange}
-              min="0"
-              step="0.5"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Enter estimated hours"
-            />
-          </div>
-
-          {/* Tags */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Tags
@@ -341,7 +352,6 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             />
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4">
             <button
               type="button"
@@ -352,9 +362,10 @@ const TaskForm = ({ isOpen, onClose, onSubmit, task = null }) => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              {task ? 'Update Task' : 'Create Task'}
+              {loading ? 'Saving...' : (task ? 'Update Task' : 'Create Task')}
             </button>
           </div>
         </form>

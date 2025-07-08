@@ -1,294 +1,341 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Home, Building, Users, ArrowRightLeft, Grid, List } from 'lucide-react';
+import { Calendar, Home, Building, Users, ChevronLeft, ChevronRight, User, Plane, Heart, Stethoscope, HelpCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import ExchangeModal from './ExchangeModal';
-import MonthView from './MonthView';
+import TeamScheduleView from './TeamScheduleView';
+import api from '../../services/api';
 
 const WorkSchedule = () => {
   const { user } = useAuth();
-  const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [schedule, setSchedule] = useState({});
-  const [exchangeRequests, setExchangeRequests] = useState([]);
   const [showExchangeModal, setShowExchangeModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [viewMode, setViewMode] = useState('month'); // Default to month view
-
-  // Fixed week calculation starting from Monday
-  const getWeekDates = (date) => {
-    const week = [];
-    const startDate = new Date(date);
-    
-    // Get Monday of the current week - Fixed calculation
-    const day = startDate.getDay();
-    const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
-    startDate.setDate(diff);
-
-    // Generate 7 days starting from Monday
-    for (let i = 0; i < 7; i++) {
-      const currentDate = new Date(startDate);
-      currentDate.setDate(startDate.getDate() + i);
-      week.push(currentDate);
-    }
-    return week;
-  };
-
-  const weekDates = getWeekDates(currentWeek);
+  const [activeTab, setActiveTab] = useState('my-schedule');
 
   useEffect(() => {
-    fetchSchedule();
-    fetchExchangeRequests();
-  }, [user]);
+    if (activeTab === 'my-schedule' && user) {
+      fetchSchedule();
+    }
+  }, [user, activeTab]);
 
   const fetchSchedule = async () => {
     try {
-      // Load from shared storage that admin sets
-      const savedSchedule = localStorage.getItem(`schedule_${user?.id}`);
-      if (savedSchedule) {
-        setSchedule(JSON.parse(savedSchedule));
-      } else {
-        // Also check shared schedules
-        const sharedSchedules = localStorage.getItem('shared_schedules');
-        if (sharedSchedules) {
-          const allSchedules = JSON.parse(sharedSchedules);
-          setSchedule(allSchedules[user?.id] || {});
-        }
-      }
+      console.log('Fetching schedule for user:', user?.id);
+      
+      // Load from database via API
+      const response = await api.get('/schedules/my-schedule');
+      setSchedule(response.data);
+      console.log('Schedule loaded from database:', response.data);
     } catch (error) {
       console.error('Error fetching schedule:', error);
       setSchedule({});
     }
   };
 
-  const fetchExchangeRequests = async () => {
-    try {
-      // TODO: Replace with actual API call
-      // const response = await api.get('/schedule/exchange-requests');
-      // setExchangeRequests(response.data);
-      setExchangeRequests([]);
-    } catch (error) {
-      console.error('Error fetching exchange requests:', error);
-      setExchangeRequests([]);
+  const getDaysInMonth = (date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    
+    let startingDayOfWeek = firstDay.getDay();
+    startingDayOfWeek = (startingDayOfWeek + 6) % 7;
+
+    const days = [];
+    
+    for (let i = 0; i < startingDayOfWeek; i++) {
+      days.push(null);
     }
-  };
-
-  const saveScheduleChange = async (date, location) => {
-    try {
-      // TODO: Replace with actual API call
-      // await api.post('/schedule/update', { date, location });
-      
-      // For now, save to localStorage
-      const newSchedule = {
-        ...schedule,
-        [date]: location
-      };
-      setSchedule(newSchedule);
-      localStorage.setItem(`schedule_${user?.id}`, JSON.stringify(newSchedule));
-      
-      console.log('Schedule saved:', { date, location });
-    } catch (error) {
-      console.error('Error saving schedule:', error);
-      alert('Failed to save schedule. Please try again.');
+    
+    for (let day = 1; day <= daysInMonth; day++) {
+      days.push(new Date(year, month, day));
     }
+    
+    return days;
   };
 
-  const getLocationIcon = (location) => {
-    switch (location) {
-      case 'office':
-        return <Building className="h-4 w-4" />;
-      case 'remote':
-        return <Home className="h-4 w-4" />;
-      default:
-        return <Calendar className="h-4 w-4" />;
-    }
-  };
-
-  const getLocationColor = (location) => {
-    switch (location) {
-      case 'office':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'remote':
-        return 'bg-green-100 text-green-800 border-green-200';
-      default:
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const handleRequestExchange = (date) => {
-    const dateStr = typeof date === 'string' ? date : date.toISOString().split('T')[0];
-    setSelectedDate(dateStr);
-    setShowExchangeModal(true);
-  };
-
-  const handleDateClick = (date) => {
-    handleRequestExchange(date);
+  const formatDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const isWeekend = (date) => {
     const day = date.getDay();
-    return day === 0 || day === 6; // Sunday (0) or Saturday (6)
+    return day === 0 || day === 6;
   };
 
-  const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
+  const isToday = (date) => {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
   };
+
+  const getLocationIcon = (location) => {
+    if (typeof location === 'object' && location.type === 'dayoff') {
+      switch (location.reason) {
+        case 'illness': return <Stethoscope className="h-3 w-3" />;
+        case 'family': return <Heart className="h-3 w-3" />;
+        default: return <HelpCircle className="h-3 w-3" />;
+      }
+    }
+    
+    switch (location) {
+      case 'office': return <Building className="h-3 w-3" />;
+      case 'remote': return <Home className="h-3 w-3" />;
+      case 'vacation': return <Plane className="h-3 w-3" />;
+      case 'dayoff': return <HelpCircle className="h-3 w-3" />;
+      default: return null;
+    }
+  };
+
+  const getLocationColor = (location) => {
+    if (!location) return 'bg-gray-100 text-gray-600';
+    
+    const locationType = typeof location === 'object' ? location.type : location;
+    switch (locationType) {
+      case 'office': return 'bg-blue-600 text-white';
+      case 'remote': return 'bg-green-600 text-white';
+      case 'vacation': return 'bg-purple-600 text-white';
+      case 'dayoff': return 'bg-orange-600 text-white';
+      default: return 'bg-gray-600 text-white';
+    }
+  };
+
+  const getLocationLabel = (location) => {
+    if (!location) return '';
+    
+    if (typeof location === 'object' && location.type === 'dayoff') {
+      return `Day-off (${location.reason})`;
+    }
+    return location ? location.charAt(0).toUpperCase() + location.slice(1) : '';
+  };
+
+  const handleDateClick = (date) => {
+    const dateStr = formatDate(date);
+    const currentLocation = schedule[dateStr];
+    
+    console.log('Date clicked:', dateStr, 'Location:', currentLocation);
+    
+    if (currentLocation === 'office' || currentLocation === 'remote') {
+      setSelectedDate(date);
+      setShowExchangeModal(true);
+    }
+  };
+
+  const navigatePrevious = () => {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(newDate.getMonth() - 1);
+    setCurrentDate(newDate);
+  };
+
+  const navigateNext = () => {
+    const newDate = new Date(currentDate);
+    newDate.setMonth(newDate.getMonth() + 1);
+    setCurrentDate(newDate);
+  };
+
+  const getDateRangeLabel = () => {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+  };
+
+  const days = getDaysInMonth(currentDate);
+  const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Work Schedule</h1>
-          <p className="text-gray-600">Manage your office and remote work schedule</p>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          {/* View Mode Toggle */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setViewMode('week')}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'week'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <List className="h-4 w-4 inline mr-1" />
-              Week
-            </button>
-            <button
-              onClick={() => setViewMode('month')}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                viewMode === 'month'
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Grid className="h-4 w-4 inline mr-1" />
-              Month
-            </button>
-          </div>
-
-          {exchangeRequests.filter(req => req.status === 'pending').length > 0 && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-              <div className="flex items-center space-x-2">
-                <ArrowRightLeft className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm text-yellow-800">
-                  {exchangeRequests.filter(req => req.status === 'pending').length} pending exchange request(s)
-                </span>
-              </div>
-            </div>
-          )}
+          <p className="text-gray-600">View your work schedule and team schedules</p>
         </div>
       </div>
 
-      {/* Conditional View Rendering */}
-      {viewMode === 'month' ? (
-        <MonthView
-          schedule={schedule}
-          onDateClick={handleDateClick}
-          exchangeRequests={exchangeRequests}
-          onScheduleUpdate={saveScheduleChange}
-        />
-      ) : (
-        <>
-          {/* Week Navigation */}
-          <div className="flex justify-between items-center mb-6">
+      {/* Tab Navigation */}
+      <div className="bg-white shadow rounded-lg mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex">
             <button
-              onClick={() => {
-                const prevWeek = new Date(currentWeek);
-                prevWeek.setDate(prevWeek.getDate() - 7);
-                setCurrentWeek(prevWeek);
-              }}
-              className="text-blue-600 hover:text-blue-800"
+              onClick={() => setActiveTab('my-schedule')}
+              className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                activeTab === 'my-schedule'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
             >
-              ← Previous Week
+              <div className="flex items-center space-x-2">
+                <User className="h-4 w-4" />
+                <span>My Schedule</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('team-schedule')}
+              className={`py-4 px-6 border-b-2 font-medium text-sm ${
+                activeTab === 'team-schedule'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Users className="h-4 w-4" />
+                <span>Team Schedules</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Content based on active tab */}
+      {activeTab === 'my-schedule' ? (
+        <div className="bg-white shadow rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Schedule for {user?.name}</h3>
+            <div className="text-sm text-gray-600">
+              Click on work days (office/remote) to request exchanges
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center justify-between mb-6">
+            <button
+              onClick={navigatePrevious}
+              className="p-2 hover:bg-gray-100 rounded-full"
+            >
+              <ChevronLeft className="h-5 w-5" />
             </button>
             
-            <h2 className="text-lg font-semibold">
-              Week of {weekDates[0].toLocaleDateString()} (Monday - Sunday)
+            <h2 className="text-xl font-semibold">
+              {getDateRangeLabel()}
             </h2>
             
             <button
-              onClick={() => {
-                const nextWeek = new Date(currentWeek);
-                nextWeek.setDate(nextWeek.getDate() + 7);
-                setCurrentWeek(nextWeek);
-              }}
-              className="text-blue-600 hover:text-blue-800"
+              onClick={navigateNext}
+              className="p-2 hover:bg-gray-100 rounded-full"
             >
-              Next Week →
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Week Schedule Grid - Starting with Monday */}
-          <div className="grid grid-cols-7 gap-4 mb-8">
-            {weekDates.map((date, index) => {
+          {/* Calendar Grid */}
+          <div className="grid grid-cols-7 gap-1 mb-4">
+            {weekDays.map(day => (
+              <div key={day} className="p-2 text-center text-sm font-medium text-gray-500">
+                {day}
+              </div>
+            ))}
+            
+            {days.map((date, index) => {
+              if (!date) {
+                return <div key={index} className="p-2 h-20"></div>;
+              }
+
               const dateStr = formatDate(date);
-              const location = schedule[dateStr];
-              const isToday = formatDate(new Date()) === dateStr;
               const weekend = isWeekend(date);
-              
+              const today = isToday(date);
+              const location = schedule[dateStr];
+              const canRequestExchange = location === 'office' || location === 'remote';
+
+              let bgColor = '';
+              if (location) {
+                const locationType = typeof location === 'object' ? location.type : location;
+                switch (locationType) {
+                  case 'office': bgColor = 'bg-blue-100 hover:bg-blue-200'; break;
+                  case 'remote': bgColor = 'bg-green-100 hover:bg-green-200'; break;
+                  case 'vacation': bgColor = 'bg-purple-100 hover:bg-purple-200'; break;
+                  case 'dayoff': bgColor = 'bg-orange-100 hover:bg-orange-200'; break;
+                }
+              }
+
               return (
                 <div
                   key={index}
-                  className={`bg-white border rounded-lg p-4 ${
-                    isToday ? 'ring-2 ring-blue-500' : 'border-gray-200'
-                  } ${weekend ? 'bg-gray-50' : ''}`}
+                  onClick={() => canRequestExchange && handleDateClick(date)}
+                  className={`p-2 h-20 border border-gray-200 relative transition-all ${
+                    today ? 'ring-2 ring-blue-500' : ''
+                  } ${weekend ? 'bg-gray-100' : 'hover:bg-gray-50'} ${bgColor} ${
+                    canRequestExchange ? 'cursor-pointer' : ''
+                  }`}
+                  title={canRequestExchange ? 'Click to request exchange' : ''}
                 >
-                  <div className="text-center mb-3">
-                    <div className="font-semibold text-gray-900">
-                      {date.toLocaleDateString('en-US', { weekday: 'short' })}
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </div>
+                  <div className="flex justify-between items-start h-full">
+                    <span className={`text-sm ${today ? 'font-bold text-blue-600' : 'text-gray-900'}`}>
+                      {date.getDate()}
+                    </span>
                   </div>
 
-                  {weekend ? (
-                    <div className="text-center text-gray-500 text-sm">
-                      Weekend
-                    </div>
-                  ) : location ? (
-                    <div className="space-y-2">
-                      <div className={`flex items-center justify-center space-x-2 px-3 py-2 rounded-full border ${getLocationColor(location)}`}>
-                        {getLocationIcon(location)}
-                        <span className="text-sm font-medium capitalize">{location}</span>
+                  {weekend && !location && (
+                    <div className="absolute bottom-1 left-1 right-1">
+                      <div className="text-center text-xs text-gray-500 py-1">
+                        Weekend
                       </div>
-                      
-                      <button
-                        onClick={() => handleRequestExchange(dateStr)}
-                        className="w-full text-xs text-blue-600 hover:text-blue-800 flex items-center justify-center space-x-1"
-                      >
-                        <ArrowRightLeft className="h-3 w-3" />
-                        <span>Request Exchange</span>
-                      </button>
                     </div>
-                  ) : (
-                    <div className="text-center text-gray-400 text-sm">
-                      Not scheduled
+                  )}
+
+                  {location && (
+                    <div className="absolute bottom-1 left-1 right-1">
+                      <div className={`text-center text-xs font-medium py-1 rounded flex items-center justify-center ${getLocationColor(location)}`}>
+                        {getLocationIcon(location)}
+                        <span className="ml-1">{getLocationLabel(location)}</span>
+                      </div>
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-        </>
-      )}
 
-      {/* Show message when no schedule data */}
-      {Object.keys(schedule).length === 0 && (
-        <div className="bg-white shadow rounded-lg p-6 text-center">
-          <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Schedule Data</h3>
-          <p className="text-gray-600">Your work schedule will appear here once it's been set by an administrator.</p>
+          {/* Legend */}
+          <div className="flex items-center justify-center space-x-6 text-sm">
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-blue-600 rounded flex items-center justify-center">
+                <Building className="h-2 w-2 text-white" />
+              </div>
+              <span>Office</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-green-600 rounded flex items-center justify-center">
+                <Home className="h-2 w-2 text-white" />
+              </div>
+              <span>Remote</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-purple-600 rounded flex items-center justify-center">
+                <Plane className="h-2 w-2 text-white" />
+              </div>
+              <span>Vacation</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-orange-600 rounded flex items-center justify-center">
+                <Heart className="h-2 w-2 text-white" />
+              </div>
+              <span>Day-off</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded"></div>
+              <span>Not Scheduled</span>
+            </div>
+          </div>
         </div>
+      ) : (
+        <TeamScheduleView currentUser={user} />
       )}
 
+      {/* Exchange Modal */}
       <ExchangeModal
         isOpen={showExchangeModal}
         onClose={() => setShowExchangeModal(false)}
         date={selectedDate}
-        currentLocation={selectedDate ? schedule[selectedDate] : null}
-        onSave={saveScheduleChange}
+        currentLocation={selectedDate ? schedule[formatDate(selectedDate)] : null}
+        onSave={() => {
+          setShowExchangeModal(false);
+        }}
       />
     </div>
   );

@@ -1,10 +1,11 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const auth = require('../middleware/auth'); // Add this import
 
 const router = express.Router();
 
-// Register endpoint
+// Register endpoint (no auth needed)
 router.post('/register', async (req, res) => {
   try {
     console.log('Registration attempt:', req.body);
@@ -43,9 +44,15 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Admin-only user registration
-router.post('/admin/register', async (req, res) => {
+// Admin-only user registration (PROTECTED)
+router.post('/admin/register', auth, async (req, res) => {
   try {
+    // Check if user is admin
+    const currentUser = await User.findById(req.user.userId);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
     console.log('Admin registration attempt:', req.body);
     const { name, email, password, department, position, role } = req.body;
 
@@ -88,9 +95,10 @@ router.post('/admin/register', async (req, res) => {
   }
 });
 
-// Get all users (admin only)
-router.get('/users', async (req, res) => {
+// Get all users (PROTECTED)
+router.get('/users', auth, async (req, res) => {
   try {
+    console.log('Authenticated user requesting users:', req.user.userId);
     const users = await User.find({}, '-password');
     console.log('Fetching users, found:', users.length);
     res.json(users.map(user => ({
@@ -109,19 +117,23 @@ router.get('/users', async (req, res) => {
   }
 });
 
-// Delete user (admin only)
-router.delete('/users/:id', async (req, res) => {
+// Delete user (PROTECTED - admin only)
+router.delete('/users/:id', auth, async (req, res) => {
   try {
+    // Check if user is admin
+    const currentUser = await User.findById(req.user.userId);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
     const userId = req.params.id;
     console.log('Delete user attempt:', userId);
 
-    // Check if user exists
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Delete the user
     await User.findByIdAndDelete(userId);
     console.log('User deleted successfully:', user.email);
 
@@ -139,9 +151,15 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
-// Update user (admin only)
-router.put('/users/:id', async (req, res) => {
+// Update user (PROTECTED - admin only)
+router.put('/users/:id', auth, async (req, res) => {
   try {
+    // Check if user is admin
+    const currentUser = await User.findById(req.user.userId);
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+
     const userId = req.params.id;
     const { name, email, department, position, role, isActive } = req.body;
     
@@ -152,7 +170,6 @@ router.put('/users/:id', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Update user fields
     user.name = name || user.name;
     user.email = email || user.email;
     user.department = department !== undefined ? department : user.department;
@@ -181,7 +198,7 @@ router.put('/users/:id', async (req, res) => {
   }
 });
 
-// Login endpoint
+// Login endpoint (no auth needed)
 router.post('/login', async (req, res) => {
   try {
     console.log('=== LOGIN ATTEMPT STARTED ===');
@@ -222,6 +239,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    console.log('JWT_SECRET being used:', process.env.JWT_SECRET ? 'Environment variable' : 'Default fallback');
+    console.log('Token generated successfully');
     console.log('Login successful for:', user.email);
     console.log('=== LOGIN ATTEMPT COMPLETED ===');
 

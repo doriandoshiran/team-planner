@@ -78,20 +78,23 @@ router.get('/:id', auth, async (req, res) => {
 // Create new project
 router.post('/', auth, async (req, res) => {
   try {
-    const {
+    let {
       name,
       description,
       status,
       priority,
       startDate,
       dueDate,
-      budget,
       teamMembers,
       milestones,
       tags,
       client,
       department
     } = req.body;
+
+    if (Array.isArray(teamMembers) && teamMembers.length > 0 && typeof teamMembers[0] === 'string') {
+      teamMembers = teamMembers.map(userId => ({ userId }));
+    }
 
     const project = new Project({
       name,
@@ -100,7 +103,6 @@ router.post('/', auth, async (req, res) => {
       priority: priority || 'medium',
       startDate,
       dueDate,
-      budget,
       teamMembers: teamMembers || [],
       milestones: milestones || [],
       tags: tags || [],
@@ -110,7 +112,7 @@ router.post('/', auth, async (req, res) => {
     });
 
     await project.save();
-    
+
     const populatedProject = await Project.findById(project._id)
       .populate('teamMembers.userId', 'name email')
       .populate('createdBy', 'name email');
@@ -138,14 +140,29 @@ router.put('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Project not found or no permission' });
     }
 
-    Object.assign(project, req.body);
-    
-    if (req.body.status === 'completed' && !project.completedDate) {
+    let updateData = { ...req.body };
+    if (updateData.teamMembers && Array.isArray(updateData.teamMembers)) {
+      if (updateData.teamMembers.length > 0 && typeof updateData.teamMembers[0] === 'string') {
+        updateData.teamMembers = updateData.teamMembers.map(userId => ({ userId }));
+      }
+    }
+
+    Object.keys(updateData).forEach(key => {
+      if (key !== '_id' && key !== '__v') {
+        project[key] = updateData[key];
+      }
+    });
+
+    const progress = await project.calculateProgress();
+    project.progress = progress;
+
+    if (project.progress === 100 && project.status !== 'completed') {
+      project.status = 'completed';
       project.completedDate = new Date();
     }
 
     await project.save();
-    
+
     const updatedProject = await Project.findById(project._id)
       .populate('teamMembers.userId', 'name email')
       .populate('tasks');
@@ -157,7 +174,7 @@ router.put('/:id', auth, async (req, res) => {
   }
 });
 
-// Delete project
+// Delete project (FIXED - Also delete associated tasks)
 router.delete('/:id', auth, async (req, res) => {
   try {
     const project = await Project.findOne({
@@ -169,8 +186,13 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Project not found or no permission' });
     }
 
+    // Delete all tasks associated with this project
+    await Task.deleteMany({ project: req.params.id });
+
+    // Delete the project
     await Project.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Project deleted successfully' });
+    
+    res.json({ message: 'Project and associated tasks deleted successfully' });
   } catch (error) {
     console.error('Error deleting project:', error);
     res.status(500).json({ message: 'Server error deleting project' });
@@ -196,7 +218,6 @@ router.post('/:id/team', auth, async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Check if user is already a team member
     const existingMember = project.teamMembers.find(
       member => member.userId.toString() === userId
     );
@@ -283,8 +304,6 @@ router.post('/:id/comments', auth, async (req, res) => {
 // Update progress
 router.patch('/:id/progress', auth, async (req, res) => {
   try {
-    const { progress } = req.body;
-    
     const project = await Project.findOne({
       _id: req.params.id,
       $or: [
@@ -297,7 +316,8 @@ router.patch('/:id/progress', auth, async (req, res) => {
       return res.status(404).json({ message: 'Project not found or no permission' });
     }
 
-    project.progress = Math.max(0, Math.min(100, progress));
+    const progress = await project.calculateProgress();
+    project.progress = progress;
     
     if (project.progress === 100 && project.status !== 'completed') {
       project.status = 'completed';

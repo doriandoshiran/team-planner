@@ -1,148 +1,127 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Calendar, Flag, User } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { Plus, Search, Filter, CheckSquare, Clock, User, Edit, Trash2, Eye } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 import TaskForm from './TaskForm';
-import { taskService } from '../../services/taskService';
+import api from '../../services/api';
 
 const TaskList = () => {
-  const { t } = useTranslation();
+  const { user, isAuthenticated, loading } = useAuth();
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [showTaskForm, setShowTaskForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
-  const [filter, setFilter] = useState('all');
-  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [priorityFilter, setPriorityFilter] = useState('all');
 
   useEffect(() => {
-    fetchTasks();
-  }, []);
+    if (isAuthenticated && !loading && user) {
+      console.log('TaskList: User is authenticated, fetching tasks');
+      fetchTasks();
+    } else {
+      console.log('TaskList: Waiting for authentication', { isAuthenticated, loading, user: user?.email });
+    }
+  }, [isAuthenticated, loading, user]);
 
   const fetchTasks = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      const data = await taskService.getTasks();
-      
-      const safeTasks = Array.isArray(data) ? data.map(task => ({
-        _id: task._id || task.id || Math.random().toString(),
-        title: String(task.title || t('tasks.taskTitle')),
-        description: String(task.description || ''),
-        priority: String(task.priority || 'medium'),
-        status: String(task.status || 'todo'),
-        dueDate: task.dueDate || null,
-        assignee: String(task.assignee || '')
-      })) : [];
-      
-      setTasks(safeTasks);
+      setDataLoading(true);
+      console.log('TaskList: Fetching tasks...');
+      const response = await api.get('/tasks');
+      console.log('TaskList: Tasks fetched:', response.data);
+      setTasks(response.data);
     } catch (error) {
-      console.error('Error fetching tasks:', error);
-      setError(error.message);
+      console.error('TaskList: Error fetching tasks:', error);
       setTasks([]);
     } finally {
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
   const handleCreateTask = async (taskData) => {
     try {
-      const newTask = await taskService.createTask(taskData);
-      const safeTask = {
-        _id: newTask._id || newTask.id || Math.random().toString(),
-        title: String(newTask.title || taskData.title || t('tasks.taskTitle')),
-        description: String(newTask.description || taskData.description || ''),
-        priority: String(newTask.priority || taskData.priority || 'medium'),
-        status: String(newTask.status || taskData.status || 'todo'),
-        dueDate: newTask.dueDate || taskData.dueDate || null,
-        assignee: String(newTask.assignee || taskData.assignee || '')
-      };
-      
-      setTasks([safeTask, ...tasks]);
+      const response = await api.post('/tasks', taskData);
+      setTasks([response.data, ...tasks]);
+      setShowTaskForm(false);
     } catch (error) {
       console.error('Error creating task:', error);
-      alert(t('errors.creatingTask', { error: error.message || t('errors.unknown') }));
+      alert('Failed to create task');
     }
   };
 
   const handleUpdateTask = async (taskData) => {
     try {
-      const updatedTask = await taskService.updateTask(editingTask._id, taskData);
-      
-      setTasks(tasks.map(task => 
-        task._id === editingTask._id ? {
-          ...task,
-          title: String(updatedTask.title || taskData.title || task.title),
-          description: String(updatedTask.description || taskData.description || task.description),
-          priority: String(updatedTask.priority || taskData.priority || task.priority),
-          status: String(updatedTask.status || taskData.status || task.status),
-          dueDate: updatedTask.dueDate || taskData.dueDate || task.dueDate,
-          assignee: String(updatedTask.assignee || taskData.assignee || task.assignee)
-        } : task
-      ));
+      const response = await api.put(`/tasks/${editingTask._id}`, taskData);
+      setTasks(tasks.map(t => t._id === editingTask._id ? response.data : t));
+      setShowTaskForm(false);
+      setEditingTask(null);
     } catch (error) {
       console.error('Error updating task:', error);
-      alert(t('errors.updatingTask', { error: error.message || t('errors.unknown') }));
+      alert('Failed to update task');
     }
   };
 
-  const handleDeleteTask = async (id) => {
-    if (window.confirm(t('tasks.deleteConfirm'))) {
+  const handleDeleteTask = async (task) => {
+    if (window.confirm(`Are you sure you want to delete "${task.title}"?`)) {
       try {
-        await taskService.deleteTask(id);
-        setTasks(tasks.filter(task => task._id !== id));
+        await api.delete(`/tasks/${task._id}`);
+        setTasks(tasks.filter(t => t._id !== task._id));
       } catch (error) {
         console.error('Error deleting task:', error);
-        alert(t('errors.deletingTask', { error: error.message || t('errors.unknown') }));
+        alert('Failed to delete task');
       }
     }
   };
 
-  const handleStatusChange = async (taskId, newStatus) => {
+  const handleStatusChange = async (task, newStatus) => {
     try {
-      await taskService.updateTaskStatus(taskId, newStatus);
-      setTasks(tasks.map(task => 
-        task._id === taskId ? { ...task, status: String(newStatus) } : task
-      ));
+      const response = await api.patch(`/tasks/${task._id}/status`, { status: newStatus });
+      setTasks(tasks.map(t => t._id === task._id ? response.data : t));
     } catch (error) {
       console.error('Error updating task status:', error);
-      alert(t('errors.updatingTask', { error: error.message || t('errors.unknown') }));
-    }
-  };
-
-  const getPriorityColor = (priority) => {
-    const safePriority = String(priority || 'medium').toLowerCase();
-    switch (safePriority) {
-      case 'urgent': return 'text-red-600 bg-red-100';
-      case 'high': return 'text-orange-600 bg-orange-100';
-      case 'medium': return 'text-yellow-600 bg-yellow-100';
-      case 'low': return 'text-green-600 bg-green-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const getStatusColor = (status) => {
-    const safeStatus = String(status || 'todo').toLowerCase();
-    switch (safeStatus) {
-      case 'todo': return 'text-gray-600 bg-gray-100';
-      case 'inprogress': return 'text-blue-600 bg-blue-100';
-      case 'done': return 'text-green-600 bg-green-100';
-      default: return 'text-gray-600 bg-gray-100';
+      alert('Failed to update task status');
     }
   };
 
   const filteredTasks = tasks.filter(task => {
-    if (!task || typeof task !== 'object') return false;
-    if (filter === 'all') return true;
-    return String(task.status || '').toLowerCase() === filter;
+    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         task.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
+    const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
+    return matchesSearch && matchesStatus && matchesPriority;
   });
 
-  if (loading) {
-    return <div className="flex justify-center items-center h-64">{t('common.loading')}</div>;
-  }
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'todo': return 'bg-gray-100 text-gray-800 border-gray-200';
+      case 'inprogress': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'done': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
 
-  if (error) {
+  const getPriorityColor = (priority) => {
+    switch (priority) {
+      case 'urgent': return 'bg-red-100 text-red-800 border-red-200';
+      case 'high': return 'bg-orange-100 text-orange-800 border-orange-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'low': return 'bg-green-100 text-green-800 border-green-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-red-600">{t('errors.loadingTasks', { error })}</div>
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  if (dataLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-lg">Loading tasks...</div>
       </div>
     );
   }
@@ -150,128 +129,171 @@ const TaskList = () => {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('tasks.title')}</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
+          <p className="text-gray-600">Manage your tasks and track progress</p>
+        </div>
         <button
-          onClick={() => setIsFormOpen(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center space-x-2"
+          onClick={() => {
+            setEditingTask(null);
+            setShowTaskForm(true);
+          }}
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center space-x-2 transition-colors"
         >
           <Plus className="h-4 w-4" />
-          <span>{t('tasks.addTask')}</span>
+          <span>New Task</span>
         </button>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex space-x-1 mb-6">
-        {[
-          { key: 'all', label: t('tasks.allTasks') },
-          { key: 'todo', label: t('tasks.todo') },
-          { key: 'inprogress', label: t('tasks.inProgress') },
-          { key: 'done', label: t('tasks.done') }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setFilter(tab.key)}
-            className={`px-4 py-2 rounded-md text-sm font-medium ${
-              filter === tab.key
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Task Grid */}
-      <div className="grid gap-4">
-        {filteredTasks.map(task => {
-          if (!task || !task._id) {
-            return null;
-          }
-
-          return (
-            <div key={task._id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start mb-3">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {task.title}
-                </h3>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => {
-                      setEditingTask(task);
-                      setIsFormOpen(true);
-                    }}
-                    className="text-gray-400 hover:text-blue-600"
-                    title={t('common.edit')}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteTask(task._id)}
-                    className="text-gray-400 hover:text-red-600"
-                    title={t('common.delete')}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-gray-600 mb-3">{task.description}</p>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}>
-                    <Flag className="h-3 w-3 inline mr-1" />
-                    {t(`tasks.${task.priority}`)}
-                  </span>
-                  
-                  <select
-                    value={task.status}
-                    onChange={(e) => handleStatusChange(task._id, e.target.value)}
-                    className={`px-2 py-1 rounded-full text-xs font-medium border-0 ${getStatusColor(task.status)}`}
-                  >
-                    <option value="todo">{t('tasks.todo')}</option>
-                    <option value="inprogress">{t('tasks.inProgress')}</option>
-                    <option value="done">{t('tasks.done')}</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center space-x-2 text-sm text-gray-500">
-                  {task.dueDate && (
-                    <span className="flex items-center">
-                      <Calendar className="h-4 w-4 mr-1" />
-                      {(() => {
-                        try {
-                          return new Date(task.dueDate).toLocaleDateString();
-                        } catch (error) {
-                          return t('errors.unknown');
-                        }
-                      })()}
-                    </span>
-                  )}
-                  {task.assignee && (
-                    <span className="flex items-center">
-                      <User className="h-4 w-4 mr-1" />
-                      {String(task.assignee)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {filteredTasks.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-gray-500">{t('tasks.noTasks')}</p>
+      {/* Search and Filters */}
+      <div className="flex space-x-4 mb-6">
+        <div className="flex-1 relative">
+          <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search tasks..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
-      )}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Status</option>
+          <option value="todo">To Do</option>
+          <option value="inprogress">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+        <select
+          value={priorityFilter}
+          onChange={(e) => setPriorityFilter(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All Priority</option>
+          <option value="urgent">Urgent</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
 
+      {/* Tasks List - IMPROVED STYLING */}
+      <div className="bg-white shadow rounded-lg overflow-hidden">
+        {filteredTasks.length > 0 ? (
+          <div className="divide-y divide-gray-200">
+            {filteredTasks.map(task => (
+              <div key={task._id} className="p-6 hover:bg-gray-50 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h3 className="text-lg font-medium text-gray-900 truncate">{task.title}</h3>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(task.status)}`}>
+                        {task.status === 'todo' ? 'To Do' : task.status === 'inprogress' ? 'In Progress' : 'Done'}
+                      </span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)}`}>
+                        {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                      </span>
+                    </div>
+                    
+                    {task.description && (
+                      <p className="text-gray-600 mb-3 line-clamp-2">{task.description}</p>
+                    )}
+                    
+                    <div className="flex items-center space-x-4 text-sm text-gray-500">
+                      {task.userId && (
+                        <div className="flex items-center space-x-1">
+                          <User className="h-4 w-4" />
+                          <span>{task.userId.name}</span>
+                        </div>
+                      )}
+                      {task.dueDate && (
+                        <div className="flex items-center space-x-1">
+                          <Clock className="h-4 w-4" />
+                          <span>Due: {new Date(task.dueDate).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* IMPROVED ACTION BUTTONS */}
+                  <div className="flex items-center space-x-3 ml-4">
+                    {/* Status Dropdown - IMPROVED */}
+                    <div className="relative">
+                      <select
+                        value={task.status}
+                        onChange={(e) => handleStatusChange(task, e.target.value)}
+                        className="appearance-none bg-white border border-gray-300 rounded-md px-3 py-2 pr-8 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      >
+                        <option value="todo">To Do</option>
+                        <option value="inprogress">In Progress</option>
+                        <option value="done">Done</option>
+                      </select>
+                      <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons - IMPROVED */}
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => {
+                          setEditingTask(task);
+                          setShowTaskForm(true);
+                        }}
+                        className="inline-flex items-center p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Edit task"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      
+                      <button
+                        onClick={() => handleDeleteTask(task)}
+                        className="inline-flex items-center p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        title="Delete task"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <CheckSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No tasks found</h3>
+            <p className="text-gray-600 mb-4">
+              {searchTerm || statusFilter !== 'all' || priorityFilter !== 'all'
+                ? 'Try adjusting your search or filter criteria'
+                : 'Create your first task to get started'
+              }
+            </p>
+            {!searchTerm && statusFilter === 'all' && priorityFilter === 'all' && (
+              <button
+                onClick={() => {
+                  setEditingTask(null);
+                  setShowTaskForm(true);
+                }}
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Create Task
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Task Form Modal */}
       <TaskForm
-        isOpen={isFormOpen}
+        isOpen={showTaskForm}
         onClose={() => {
-          setIsFormOpen(false);
+          setShowTaskForm(false);
           setEditingTask(null);
         }}
         onSubmit={editingTask ? handleUpdateTask : handleCreateTask}

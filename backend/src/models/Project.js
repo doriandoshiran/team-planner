@@ -31,10 +31,6 @@ const projectSchema = new mongoose.Schema({
   completedDate: {
     type: Date
   },
-  budget: {
-    allocated: { type: Number, default: 0 },
-    spent: { type: Number, default: 0 }
-  },
   progress: {
     type: Number,
     min: 0,

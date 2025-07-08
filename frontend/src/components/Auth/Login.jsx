@@ -26,9 +26,19 @@ const Login = () => {
     setError('');
 
     try {
-      await login(formData);
-      navigate('/dashboard');
+      console.log('Login: Attempting login with:', formData.email);
+      const result = await login(formData);
+      console.log('Login: Login result:', result);
+      
+      if (result && result.user) {
+        console.log('Login: Success, navigating to dashboard');
+        // Use replace: true to prevent going back to login page
+        navigate('/dashboard', { replace: true });
+      } else {
+        setError('Login failed - invalid response');
+      }
     } catch (err) {
+      console.error('Login: Error occurred:', err);
       setError(err.response?.data?.message || err.message || 'Login failed');
     } finally {
       setLoading(false);

@@ -14,45 +14,63 @@ import ProjectList from './components/Projects/ProjectList';
 // Import i18n configuration
 import './i18n';
 
-// Protected Route Component
+// Protected Route Component - FIXED
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   
-  if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
-  }
-  
-  return isAuthenticated ? children : <Navigate to="/login" />;
-};
-
-// Admin Route Component
-const AdminRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  console.log('ProtectedRoute: isAuthenticated =', isAuthenticated, 'loading =', loading, 'user =', user?.email);
   
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
   
   if (!isAuthenticated) {
-    return <Navigate to="/login" />;
+    console.log('ProtectedRoute: Not authenticated, redirecting to login');
+    return <Navigate to="/login" replace />;
   }
   
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" />;
-  }
-  
+  console.log('ProtectedRoute: Authenticated, rendering children');
   return children;
 };
 
-// Public Route Component
-const PublicRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+// Admin Route Component - FIXED
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, isAdmin, loading, user } = useAuth();
+  
+  console.log('AdminRoute: isAuthenticated =', isAuthenticated, 'isAdmin =', isAdmin, 'loading =', loading);
   
   if (loading) {
     return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
   }
   
-  return !isAuthenticated ? children : <Navigate to="/dashboard" />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  return children;
+};
+
+// Public Route Component - FIXED
+const PublicRoute = ({ children }) => {
+  const { isAuthenticated, loading } = useAuth();
+  
+  console.log('PublicRoute: isAuthenticated =', isAuthenticated, 'loading =', loading);
+  
+  if (loading) {
+    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+  }
+  
+  if (isAuthenticated) {
+    console.log('PublicRoute: Already authenticated, redirecting to dashboard');
+    return <Navigate to="/dashboard" replace />;
+  }
+  
+  console.log('PublicRoute: Not authenticated, rendering children');
+  return children;
 };
 
 function App() {
@@ -78,7 +96,7 @@ function App() {
                 <Layout />
               </ProtectedRoute>
             }>
-              <Route index element={<Navigate to="/dashboard" />} />
+              <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="schedule" element={<WorkSchedule />} />
               <Route path="tasks" element={<TaskList />} />

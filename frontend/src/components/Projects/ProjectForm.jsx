@@ -9,45 +9,50 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
     name: '',
     description: '',
     status: 'planning',
+    priority: 'medium',
     startDate: '',
-    endDate: '',
+    dueDate: '',
     teamMembers: [],
-    color: '#3B82F6',
-    budget: 0
+    color: '#3B82F6'
   });
 
   const [availableUsers, setAvailableUsers] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [newTask, setNewTask] = useState({ title: '', assignee: '', priority: 'medium', completed: false });
+  const [newTask, setNewTask] = useState({ 
+    title: '', 
+    description: '',
+    assignee: '', 
+    priority: 'medium', 
+    startDate: '',
+    dueDate: ''
+  });
   const [showTaskForm, setShowTaskForm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       fetchUsers();
       if (project) {
-        // Fixed date handling - properly extract date part
         setFormData({
           name: project.name || '',
           description: project.description || '',
           status: project.status || 'planning',
+          priority: project.priority || 'medium',
           startDate: project.startDate ? project.startDate.split('T')[0] : '',
-          endDate: project.endDate ? project.endDate.split('T')[0] : '',
-          teamMembers: project.teamMembers || [],
-          color: project.color || '#3B82F6',
-          budget: project.budget || 0
+          dueDate: project.dueDate ? project.dueDate.split('T')[0] : '',
+          teamMembers: project.teamMembers?.map(member => member.userId || member) || [],
+          color: project.color || '#3B82F6'
         });
-        setTasks(project.tasks || []);
+        setTasks([]);
       } else {
-        // Reset form for new project
         setFormData({
           name: '',
           description: '',
           status: 'planning',
+          priority: 'medium',
           startDate: '',
-          endDate: '',
+          dueDate: '',
           teamMembers: [],
-          color: '#3B82F6',
-          budget: 0
+          color: '#3B82F6'
         });
         setTasks([]);
       }
@@ -64,9 +69,16 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSubmit({ ...formData, tasks });
+    
+    const projectData = {
+      ...formData,
+      teamMembers: formData.teamMembers,
+      tasks: project ? [] : tasks // Only include tasks for new projects
+    };
+    
+    onSubmit(projectData);
     onClose();
   };
 
@@ -90,20 +102,26 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
 
   const handleAddTask = () => {
     if (newTask.title && newTask.assignee) {
-      setTasks([...tasks, { ...newTask, id: Date.now() }]);
-      setNewTask({ title: '', assignee: '', priority: 'medium', completed: false });
+      setTasks([...tasks, { 
+        ...newTask, 
+        id: Date.now(),
+        startDate: newTask.startDate || new Date().toISOString().split('T')[0],
+        dueDate: newTask.dueDate || new Date().toISOString().split('T')[0]
+      }]);
+      setNewTask({ 
+        title: '', 
+        description: '',
+        assignee: '', 
+        priority: 'medium',
+        startDate: '',
+        dueDate: ''
+      });
       setShowTaskForm(false);
     }
   };
 
   const handleRemoveTask = (taskId) => {
     setTasks(tasks.filter(task => task.id !== taskId));
-  };
-
-  const handleToggleTaskCompletion = (taskId) => {
-    setTasks(tasks.map(task => 
-      task.id === taskId ? { ...task, completed: !task.completed } : task
-    ));
   };
 
   const projectColors = [
@@ -118,7 +136,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">
-            {project ? t('projects.editProject') : t('projects.createProject')}
+            {project ? 'Edit Project' : 'Create Project'}
           </h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X className="h-5 w-5" />
@@ -129,7 +147,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('projects.projectName')}
+                Project Name
               </label>
               <input
                 type="text"
@@ -137,14 +155,14 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 value={formData.name}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('projects.enterName')}
+                placeholder="Enter project name"
                 required
               />
             </div>
 
             <div className="col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('projects.description')}
+                Description
               </label>
               <textarea
                 name="description"
@@ -152,13 +170,13 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 onChange={handleChange}
                 rows="3"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={t('projects.enterDescription')}
+                placeholder="Enter project description"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('projects.status')}
+                Status
               </label>
               <select
                 name="status"
@@ -166,31 +184,33 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="planning">{t('projects.planning')}</option>
-                <option value="active">{t('projects.active')}</option>
-                <option value="completed">{t('projects.completed')}</option>
-                <option value="on-hold">{t('projects.onHold')}</option>
+                <option value="planning">Planning</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="onHold">On Hold</option>
               </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('projects.budget')}
+                Priority
               </label>
-              <input
-                type="number"
-                name="budget"
-                value={formData.budget}
+              <select
+                name="priority"
+                value={formData.priority}
                 onChange={handleChange}
-                min="0"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="0"
-              />
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('admin.startDate')}
+                Start Date
               </label>
               <input
                 type="date"
@@ -198,18 +218,17 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                 value={formData.startDate}
                 onChange={handleChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {t('admin.endDate')}
+                Due Date
               </label>
               <input
                 type="date"
-                name="endDate"
-                value={formData.endDate}
+                name="dueDate"
+                value={formData.dueDate}
                 onChange={handleChange}
                 min={formData.startDate}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -220,7 +239,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           {/* Color Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t('projects.color')}
+              Color
             </label>
             <div className="flex space-x-2">
               {projectColors.map(color => (
@@ -240,7 +259,7 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
           {/* Team Members */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              {t('projects.teamMembers')}
+              Team Members
             </label>
             <div className="border border-gray-300 rounded-md p-3 max-h-32 overflow-y-auto">
               {availableUsers.map(user => (
@@ -251,117 +270,144 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
                     onChange={() => handleTeamMemberToggle(user.id)}
                     className="rounded text-blue-600"
                   />
-                  <span className="text-sm">{user.name} - {user.department || t('admin.department')}</span>
+                  <span className="text-sm">{user.name} - {user.department || 'No Department'}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Tasks Section */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                {t('tasks.title')}
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowTaskForm(true)}
-                className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
-              >
-                <Plus className="h-4 w-4" />
-                <span>{t('tasks.addTask')}</span>
-              </button>
-            </div>
-
-            {showTaskForm && (
-              <div className="bg-gray-50 p-3 rounded-md mb-2">
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    placeholder={t('tasks.enterTitle')}
-                    value={newTask.title}
-                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                  />
-                  <select
-                    value={newTask.assignee}
-                    onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                  >
-                    <option value="">{t('tasks.selectAssignee')}</option>
-                    {availableUsers.map(user => (
-                      <option key={user.id} value={user.id}>{user.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={newTask.priority}
-                    onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                  >
-                    <option value="low">{t('tasks.low')}</option>
-                    <option value="medium">{t('tasks.medium')}</option>
-                    <option value="high">{t('tasks.high')}</option>
-                    <option value="urgent">{t('tasks.urgent')}</option>
-                  </select>
-                </div>
-                <div className="flex justify-end space-x-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowTaskForm(false)}
-                    className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddTask}
-                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    {t('common.add')}
-                  </button>
-                </div>
+          {/* Tasks Section - Only for new projects */}
+          {!project && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Tasks
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowTaskForm(true)}
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-1"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Task</span>
+                </button>
               </div>
-            )}
 
-            <div className="border border-gray-300 rounded-md p-3 max-h-40 overflow-y-auto">
-              {tasks.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center">{t('tasks.noTasks')}</p>
-              ) : (
-                <div className="space-y-2">
-                  {tasks.map(task => {
-                    const assignee = availableUsers.find(u => u.id === task.assignee);
-                    return (
-                      <div key={task.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <div className="flex items-center space-x-2 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={task.completed}
-                            onChange={() => handleToggleTaskCompletion(task.id)}
-                            className="rounded text-blue-600"
-                          />
-                          <div className="flex-1">
-                            <span className={`text-sm font-medium ${task.completed ? 'line-through text-gray-500' : ''}`}>
-                              {task.title}
-                            </span>
-                            <span className="text-xs text-gray-500 ml-2">
-                              ({assignee?.name || t('tasks.selectAssignee')} - {t(`tasks.${task.priority}`)})
-                            </span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTask(task.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+              {showTaskForm && (
+                <div className="bg-gray-50 p-3 rounded-md mb-2">
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Task title *"
+                      value={newTask.title}
+                      onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                      className={`w-full px-2 py-1 border ${!newTask.title ? 'border-red-300' : 'border-gray-300'} rounded text-sm`}
+                    />
+                    <textarea
+                      placeholder="Task description"
+                      value={newTask.description}
+                      onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                      rows="2"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={newTask.assignee}
+                        onChange={(e) => setNewTask({ ...newTask, assignee: e.target.value })}
+                        className={`px-2 py-1 border ${!newTask.assignee ? 'border-red-300' : 'border-gray-300'} rounded text-sm`}
+                      >
+                        <option value="">Select assignee *</option>
+                        {availableUsers.map(user => (
+                          <option key={user.id} value={user.id}>{user.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={newTask.priority}
+                        onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="urgent">Urgent</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="date"
+                        placeholder="Start Date"
+                        value={newTask.startDate}
+                        onChange={(e) => setNewTask({ ...newTask, startDate: e.target.value })}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                      <input
+                        type="date"
+                        placeholder="Due Date"
+                        value={newTask.dueDate}
+                        onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm"
+                      />
+                    </div>
+                    
+                    {/* Validation hint */}
+                    {(!newTask.title || !newTask.assignee) && (
+                      <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
+                        <strong>Required fields:</strong> Please fill in the task title and select an assignee before adding the task.
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
+                  <div className="flex justify-end space-x-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowTaskForm(false)}
+                      className="px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddTask}
+                      disabled={!newTask.title || !newTask.assignee}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={!newTask.title || !newTask.assignee ? 'Please fill in required fields' : 'Add task'}
+                    >
+                      Add
+                    </button>
+                  </div>
                 </div>
               )}
+
+              <div className="border border-gray-300 rounded-md p-3 max-h-40 overflow-y-auto">
+                {tasks.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center">No tasks added</p>
+                ) : (
+                  <div className="space-y-2">
+                    {tasks.map(task => {
+                      const assignee = availableUsers.find(u => u.id === task.assignee);
+                      return (
+                        <div key={task.id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">{task.title}</div>
+                            <div className="text-xs text-gray-500">
+                              {assignee?.name || 'Unassigned'} - {task.priority} priority
+                              {task.dueDate && ` - Due: ${task.dueDate}`}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTask(task.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-end space-x-3 pt-4">
             <button
@@ -369,13 +415,13 @@ const ProjectForm = ({ isOpen, onClose, onSubmit, project = null }) => {
               onClick={onClose}
               className="px-4 py-2 text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
             >
-              {t('common.cancel')}
+              Cancel
             </button>
             <button
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
             >
-              {project ? t('projects.updateProject') : t('projects.createProject')}
+              {project ? 'Update Project' : 'Create Project'}
             </button>
           </div>
         </form>
