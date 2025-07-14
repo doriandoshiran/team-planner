@@ -9,6 +9,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
@@ -39,13 +40,13 @@ check_prerequisites() {
         exit 1
     fi
     
-    # Check Git
-    if ! command_exists git; then
-        print_message $RED "Git is not installed. Please install Git first."
+    # Check if Docker daemon is running
+    if ! docker info >/dev/null 2>&1; then
+        print_message $RED "Docker daemon is not running. Please start Docker first."
         exit 1
     fi
     
-    print_message $GREEN "All prerequisites are installed!"
+    print_message $GREEN "All prerequisites are installed and running!"
 }
 
 # Function to setup environment
@@ -64,14 +65,22 @@ setup_environment() {
             exit 1
         fi
     fi
+    
+    print_message $GREEN "Environment setup completed!"
 }
 
 # Function to build application
 build_application() {
     print_message $YELLOW "Building application..."
     
+    # Clean up old images if requested
+    if [ "$2" = "--clean" ]; then
+        print_message $YELLOW "Cleaning up old images..."
+        docker-compose down --rmi all --volumes --remove-orphans 2>/dev/null || true
+    fi
+    
     # Build with Docker Compose
-    docker-compose build
+    docker-compose build --no-cache
     
     print_message $GREEN "Build completed successfully!"
 }
@@ -85,16 +94,36 @@ start_application() {
     
     # Wait for services to be ready
     print_message $YELLOW "Waiting for services to be ready..."
-    sleep 10
+    
+    # Check health endpoints
+    max_attempts=30
+    attempt=0
+    
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s http://localhost:5000/api/health >/dev/null 2>&1; then
+            print_message $GREEN "Backend is healthy!"
+            break
+        fi
+        attempt=$((attempt + 1))
+        sleep 2
+        echo -n "."
+    done
+    
+    if [ $attempt -eq $max_attempts ]; then
+        print_message $RED "Backend failed to start properly. Check logs with: ./deploy.sh logs backend"
+        exit 1
+    fi
     
     # Check if services are running
     if docker-compose ps | grep -q "Up"; then
         print_message $GREEN "Application started successfully!"
         print_message $GREEN "Frontend: http://localhost:3000"
         print_message $GREEN "Backend API: http://localhost:5000"
+        print_message $GREEN "Backend Health: http://localhost:5000/api/health"
         print_message $GREEN "MongoDB: localhost:27017"
+        print_message $BLUE "Use './deploy.sh logs' to monitor application logs"
     else
-        print_message $RED "Some services failed to start. Check logs with: docker-compose logs"
+        print_message $RED "Some services failed to start. Check logs with: ./deploy.sh logs"
         exit 1
     fi
 }
@@ -110,9 +139,42 @@ stop_application() {
 view_logs() {
     service=$1
     if [ -z "$service" ]; then
+        print_message $BLUE "Showing logs for all services (Ctrl+C to exit)..."
         docker-compose logs -f
     else
+        print_message $BLUE "Showing logs for $service (Ctrl+C to exit)..."
         docker-compose logs -f $service
+    fi
+}
+
+# Function to check application health
+check_health() {
+    print_message $YELLOW "Checking application health..."
+    
+    echo "=== Docker Services Status ==="
+    docker-compose ps
+    
+    echo -e "\n=== Backend Health Check ==="
+    if curl -s http://localhost:5000/api/health | jq '.' 2>/dev/null; then
+        print_message $GREEN "Backend is healthy!"
+    else
+        print_message $RED "Backend health check failed!"
+        echo "Raw response:"
+        curl -s http://localhost:5000/api/health || echo "No response"
+    fi
+    
+    echo -e "\n=== Frontend Health Check ==="
+    if curl -s http://localhost:3000/health >/dev/null 2>&1; then
+        print_message $GREEN "Frontend is healthy!"
+    else
+        print_message $RED "Frontend health check failed!"
+    fi
+    
+    echo -e "\n=== Database Connection ==="
+    if docker-compose exec -T mongodb mongosh --eval "db.adminCommand('ping')" >/dev/null 2>&1; then
+        print_message $GREEN "MongoDB is healthy!"
+    else
+        print_message $RED "MongoDB connection failed!"
     fi
 }
 
@@ -137,6 +199,7 @@ restore_database() {
     
     if [ -z "$backup_file" ]; then
         print_message $RED "Please provide backup file path"
+        print_message $YELLOW "Usage: ./deploy.sh restore <backup_file>"
         exit 1
     fi
     
@@ -158,15 +221,33 @@ restore_database() {
 update_application() {
     print_message $YELLOW "Updating application..."
     
-    # Pull latest changes
-    git pull origin main
+    # Pull latest changes if in git repo
+    if [ -d ".git" ]; then
+        git pull origin main
+    fi
     
     # Rebuild and restart
     docker-compose down
-    docker-compose build
+    docker-compose build --no-cache
     docker-compose up -d
     
     print_message $GREEN "Application updated successfully!"
+}
+
+# Function to clean up
+cleanup() {
+    print_message $YELLOW "Cleaning up Docker resources..."
+    
+    # Stop and remove containers
+    docker-compose down --volumes --remove-orphans
+    
+    # Remove unused images
+    docker image prune -f
+    
+    # Remove unused volumes
+    docker volume prune -f
+    
+    print_message $GREEN "Cleanup completed!"
 }
 
 # Function to show help
@@ -183,15 +264,22 @@ show_help() {
     echo "  restart     - Restart the application"
     echo "  status      - Show application status"
     echo "  logs        - View application logs"
+    echo "  health      - Check application health"
     echo "  backup      - Create database backup"
     echo "  restore     - Restore database from backup"
     echo "  update      - Update application to latest version"
+    echo "  cleanup     - Clean up Docker resources"
     echo "  help        - Show this help message"
+    echo ""
+    echo "Options:"
+    echo "  build --clean  - Clean build (remove old images)"
     echo ""
     echo "Examples:"
     echo "  ./deploy.sh setup"
+    echo "  ./deploy.sh build --clean"
     echo "  ./deploy.sh start"
     echo "  ./deploy.sh logs backend"
+    echo "  ./deploy.sh health"
     echo "  ./deploy.sh restore ./backups/backup_20240101_120000.archive"
 }
 
@@ -203,7 +291,7 @@ case "$1" in
         ;;
     build)
         check_prerequisites
-        build_application
+        build_application "$@"
         ;;
     start)
         check_prerequisites
@@ -214,6 +302,7 @@ case "$1" in
         ;;
     restart)
         stop_application
+        sleep 2
         start_application
         ;;
     status)
@@ -221,6 +310,9 @@ case "$1" in
         ;;
     logs)
         view_logs $2
+        ;;
+    health)
+        check_health
         ;;
     backup)
         backup_database
@@ -230,6 +322,9 @@ case "$1" in
         ;;
     update)
         update_application
+        ;;
+    cleanup)
+        cleanup
         ;;
     help)
         show_help

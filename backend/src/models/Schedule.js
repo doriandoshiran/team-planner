@@ -11,30 +11,24 @@ const scheduleSchema = new mongoose.Schema({
     required: true
   },
   location: {
-    type: String,
-    enum: ['office', 'remote', 'vacation', 'dayoff'],
+    type: mongoose.Schema.Types.Mixed, // Changed to Mixed to support complex types
     required: true
   },
   reason: {
-    type: String, // For dayoff types
-    required: false
+    type: String,
+    trim: true
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    ref: 'User'
   }
+}, {
+  timestamps: true
 });
 
-// Compound index to ensure one schedule per user per date
+// Compound index for efficient queries
 scheduleSchema.index({ userId: 1, date: 1 }, { unique: true });
+scheduleSchema.index({ date: 1 });
+scheduleSchema.index({ userId: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Schedule', scheduleSchema);

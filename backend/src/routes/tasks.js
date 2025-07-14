@@ -1,36 +1,29 @@
 const express = require('express');
-const Task = require('../models/Task');
-const Project = require('../models/Project');
-const User = require('../models/User');
 const auth = require('../middleware/auth');
+const Task = require('../models/Task');
+const User = require('../models/User');
+const Project = require('../models/Project');
 
 const router = express.Router();
 
-// Get all tasks (FIXED - Removed problematic populates)
+// Get all tasks
 router.get('/', auth, async (req, res) => {
   try {
-    const { project, assignee, status } = req.query;
-    const currentUser = await User.findById(req.user.userId);
-    let query = {};
+    const { status, priority, userId, projectId } = req.query;
+    
+    // Build filter object
+    const filter = {};
+    if (status) filter.status = status;
+    if (priority) filter.priority = priority;
+    if (userId) filter.userId = userId;
+    if (projectId) filter.project = projectId;
 
-    if (project) {
-      query.project = project;
-    } else if (assignee && currentUser.role === 'admin') {
-      query.userId = assignee;
-    } else {
-      if (currentUser.role === 'admin') {
-        query = {};
-      } else {
-        query.userId = req.user.userId;
-      }
-    }
-
-    if (status) query.status = status;
-
-    const tasks = await Task.find(query)
+    const tasks = await Task.find(filter)
       .populate('userId', 'name email department')
+      .populate('project', 'name description')
       .sort({ createdAt: -1 });
 
+    console.log(`Found ${tasks.length} tasks`);
     res.json(tasks);
   } catch (error) {
     console.error('Error fetching tasks:', error);
@@ -38,138 +31,150 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Get single task (FIXED - Removed problematic populates)
-router.get('/:id', auth, async (req, res) => {
+// Get tasks by user
+router.get('/user/:userId', auth, async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id)
-      .populate('userId', 'name email department');
+    const { userId } = req.params;
+    const tasks = await Task.find({ userId })
+      .populate('userId', 'name email department')
+      .populate('project', 'name description')
+      .sort({ createdAt: -1 });
 
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
-
-    const currentUser = await User.findById(req.user.userId);
-    if (currentUser.role !== 'admin' && task.userId._id.toString() !== req.user.userId) {
-      return res.status(403).json({ message: 'Not authorized to view this task' });
-    }
-
-    res.json(task);
+    res.json(tasks);
   } catch (error) {
-    console.error('Error fetching task:', error);
-    res.status(500).json({ message: 'Server error fetching task' });
+    console.error('Error fetching user tasks:', error);
+    res.status(500).json({ message: 'Server error fetching user tasks' });
+  }
+});
+
+// Get tasks by project
+router.get('/project/:projectId', auth, async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const tasks = await Task.find({ project: projectId })
+      .populate('userId', 'name email department')
+      .populate('project', 'name description')
+      .sort({ createdAt: -1 });
+
+    res.json(tasks);
+  } catch (error) {
+    console.error('Error fetching project tasks:', error);
+    res.status(500).json({ message: 'Server error fetching project tasks' });
   }
 });
 
 // Create new task
 router.post('/', auth, async (req, res) => {
   try {
-    const { 
-      title, 
-      description, 
-      priority, 
-      status, 
-      startDate,
-      dueDate, 
-      userId,
-      assignee,
-      project,
-      tags 
-    } = req.body;
+    const { title, description, priority, status, startDate, dueDate, userId, project, tags } = req.body;
 
-    if (!title) {
+    console.log('Creating task:', req.body);
+
+    // Validation
+    if (!title || !title.trim()) {
       return res.status(400).json({ message: 'Title is required' });
     }
-    
-    if (!userId && !assignee) {
-      return res.status(400).json({ message: 'Assignee (userId) is required' });
+
+    if (!userId) {
+      return res.status(400).json({ message: 'Assignee is required' });
     }
 
-    const taskData = {
-      title,
-      description,
-      priority: priority || 'medium',
-      status: status || 'todo',
-      startDate: startDate || new Date(),
-      dueDate,
-      userId: userId || assignee,
-      tags: tags || []
-    };
-
-    if (project && project.trim() !== '') {
-      taskData.project = project;
+    // Verify assignee exists
+    const assignee = await User.findById(userId);
+    if (!assignee) {
+      return res.status(400).json({ message: 'Assignee not found' });
     }
 
-    const task = new Task(taskData);
-    await task.save();
-    
-    // If task is assigned to a project, add it to the project's tasks array
-    if (project && project.trim() !== '') {
-      try {
-        await Project.findByIdAndUpdate(
-          project,
-          { $addToSet: { tasks: task._id } }
-        );
-        
-        // Update project progress after adding task
-        const updatedProject = await Project.findById(project);
-        if (updatedProject) {
-          const progress = await updatedProject.calculateProgress();
-          updatedProject.progress = progress;
-          await updatedProject.save();
-        }
-      } catch (err) {
-        console.log('Could not add task to project:', err.message);
+    // Verify project exists if provided
+    if (project) {
+      const projectDoc = await Project.findById(project);
+      if (!projectDoc) {
+        return res.status(400).json({ message: 'Project not found' });
       }
     }
-    
-    await task.populate('userId', 'name email department');
 
+    const task = new Task({
+      title: title.trim(),
+      description: description?.trim() || '',
+      priority: priority || 'medium',
+      status: status || 'todo',
+      startDate: startDate ? new Date(startDate) : new Date(),
+      dueDate: dueDate ? new Date(dueDate) : null,
+      userId,
+      project: project || null,
+      tags: tags || [],
+      createdBy: req.user.userId
+    });
+
+    await task.save();
+    
+    // Populate the response
+    await task.populate('userId', 'name email department');
+    await task.populate('project', 'name description');
+
+    console.log('Task created successfully:', task._id);
     res.status(201).json(task);
   } catch (error) {
     console.error('Error creating task:', error);
-    res.status(500).json({ message: 'Server error creating task', error: error.message });
+    res.status(500).json({ message: 'Server error creating task' });
   }
 });
 
 // Update task
 router.put('/:id', auth, async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
-    
+    const { id } = req.params;
+    const { title, description, priority, status, startDate, dueDate, userId, project, tags } = req.body;
+
+    console.log('Updating task:', id, req.body);
+
+    const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    const currentUser = await User.findById(req.user.userId);
-    if (currentUser.role !== 'admin' && task.userId.toString() !== req.user.userId) {
-      return res.status(403).json({ message: 'Not authorized to update this task' });
+    // Validation
+    if (title !== undefined && (!title || !title.trim())) {
+      return res.status(400).json({ message: 'Title cannot be empty' });
     }
 
-    const oldStatus = task.status;
-    Object.assign(task, req.body);
-    await task.save();
-
-    // Update project progress if task status changed
-    if (task.project && oldStatus !== task.status) {
-      try {
-        const project = await Project.findById(task.project);
-        if (project) {
-          const progress = await project.calculateProgress();
-          project.progress = progress;
-          
-          if (progress === 100 && project.status !== 'completed') {
-            project.status = 'completed';
-            project.completedDate = new Date();
-          }
-          
-          await project.save();
-        }
-      } catch (err) {
-        console.log('Could not update project progress:', err.message);
+    // Verify assignee exists if provided
+    if (userId) {
+      const assignee = await User.findById(userId);
+      if (!assignee) {
+        return res.status(400).json({ message: 'Assignee not found' });
       }
     }
 
+    // Verify project exists if provided
+    if (project) {
+      const projectDoc = await Project.findById(project);
+      if (!projectDoc) {
+        return res.status(400).json({ message: 'Project not found' });
+      }
+    }
+
+    // Update fields
+    if (title !== undefined) task.title = title.trim();
+    if (description !== undefined) task.description = description?.trim() || '';
+    if (priority !== undefined) task.priority = priority;
+    if (status !== undefined) task.status = status;
+    if (startDate !== undefined) task.startDate = startDate ? new Date(startDate) : new Date();
+    if (dueDate !== undefined) task.dueDate = dueDate ? new Date(dueDate) : null;
+    if (userId !== undefined) task.userId = userId;
+    if (project !== undefined) task.project = project || null;
+    if (tags !== undefined) task.tags = tags || [];
+    
+    task.updatedBy = req.user.userId;
+    task.updatedAt = new Date();
+
+    await task.save();
+    
+    // Populate the response
     await task.populate('userId', 'name email department');
+    await task.populate('project', 'name description');
+
+    console.log('Task updated successfully:', task._id);
     res.json(task);
   } catch (error) {
     console.error('Error updating task:', error);
@@ -180,44 +185,38 @@ router.put('/:id', auth, async (req, res) => {
 // Update task status
 router.patch('/:id/status', auth, async (req, res) => {
   try {
+    const { id } = req.params;
     const { status } = req.body;
-    
-    const task = await Task.findById(req.params.id);
-    
+
+    console.log('Updating task status:', id, status);
+
+    if (!status || !['todo', 'inprogress', 'done'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    const currentUser = await User.findById(req.user.userId);
-    if (currentUser.role !== 'admin' && task.userId.toString() !== req.user.userId) {
-      return res.status(403).json({ message: 'Not authorized to update this task' });
-    }
-
-    const oldStatus = task.status;
     task.status = status;
-    await task.save();
+    task.updatedBy = req.user.userId;
+    task.updatedAt = new Date();
 
-    // Update project progress if task status changed
-    if (task.project && oldStatus !== status) {
-      try {
-        const project = await Project.findById(task.project);
-        if (project) {
-          const progress = await project.calculateProgress();
-          project.progress = progress;
-          
-          if (progress === 100 && project.status !== 'completed') {
-            project.status = 'completed';
-            project.completedDate = new Date();
-          }
-          
-          await project.save();
-        }
-      } catch (err) {
-        console.log('Could not update project progress:', err.message);
-      }
+    // Set completion date if marking as done
+    if (status === 'done' && task.status !== 'done') {
+      task.completedAt = new Date();
+    } else if (status !== 'done') {
+      task.completedAt = null;
     }
 
+    await task.save();
+    
+    // Populate the response
     await task.populate('userId', 'name email department');
+    await task.populate('project', 'name description');
+
+    console.log('Task status updated successfully:', task._id);
     res.json(task);
   } catch (error) {
     console.error('Error updating task status:', error);
@@ -225,73 +224,66 @@ router.patch('/:id/status', auth, async (req, res) => {
   }
 });
 
-// Delete task (FIXED - Proper permission check)
-router.delete('/:id', auth, async (req, res) => {
+// Assign task to user
+router.patch('/:id/assign', auth, async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const { id } = req.params;
+    const { userId } = req.body;
 
+    console.log('Assigning task:', id, 'to user:', userId);
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Verify assignee exists
+    const assignee = await User.findById(userId);
+    if (!assignee) {
+      return res.status(400).json({ message: 'Assignee not found' });
+    }
+
+    const task = await Task.findById(id);
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    const currentUser = await User.findById(req.user.userId);
+    task.userId = userId;
+    task.updatedBy = req.user.userId;
+    task.updatedAt = new Date();
+
+    await task.save();
     
-    // Allow deletion if user is admin OR if task is assigned to them
-    if (currentUser.role !== 'admin' && task.userId && task.userId.toString() !== req.user.userId) {
-      return res.status(403).json({ message: 'Not authorized to delete this task' });
+    // Populate the response
+    await task.populate('userId', 'name email department');
+    await task.populate('project', 'name description');
+
+    console.log('Task assigned successfully:', task._id);
+    res.json(task);
+  } catch (error) {
+    console.error('Error assigning task:', error);
+    res.status(500).json({ message: 'Server error assigning task' });
+  }
+});
+
+// Delete task
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log('Deleting task:', id);
+
+    const task = await Task.findById(id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
     }
 
-    const projectId = task.project;
+    await Task.findByIdAndDelete(id);
 
-    // Remove task from project if it exists
-    if (projectId) {
-      try {
-        await Project.findByIdAndUpdate(
-          projectId,
-          { $pull: { tasks: task._id } }
-        );
-        
-        // Update project progress after removing task
-        const project = await Project.findById(projectId);
-        if (project) {
-          const progress = await project.calculateProgress();
-          project.progress = progress;
-          await project.save();
-        }
-      } catch (err) {
-        console.log('Could not remove task from project:', err.message);
-      }
-    }
-
-    await task.deleteOne();
+    console.log('Task deleted successfully:', id);
     res.json({ message: 'Task deleted successfully' });
   } catch (error) {
     console.error('Error deleting task:', error);
     res.status(500).json({ message: 'Server error deleting task' });
-  }
-});
-
-// Add comment to task
-router.post('/:id/comments', auth, async (req, res) => {
-  try {
-    const task = await Task.findById(req.params.id);
-    
-    if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
-    }
-
-    if (task.comments) {
-      task.comments.push({
-        text: req.body.text,
-        author: req.user.userId
-      });
-      await task.save();
-    }
-
-    res.status(201).json({ message: 'Comment added successfully' });
-  } catch (error) {
-    console.error('Error adding comment:', error);
-    res.status(500).json({ message: 'Server error adding comment' });
   }
 });
 

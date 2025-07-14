@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
     checkAuthStatus();
   }, []);
 
-  const checkAuthStatus = () => {
+  const checkAuthStatus = async () => {
     try {
       const token = localStorage.getItem('token');
       const userData = localStorage.getItem('user');
@@ -30,6 +30,24 @@ export const AuthProvider = ({ children }) => {
         setUser(parsedUser);
         setIsAuthenticated(true);
         console.log('User authenticated from localStorage:', parsedUser);
+        
+        // Verify token is still valid by making a request to the backend
+        try {
+          const response = await api.get('/auth/me');
+          if (response.data.success && response.data.user) {
+            // Update user data with latest from server
+            const updatedUser = response.data.user;
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+          }
+        } catch (error) {
+          console.log('Token validation failed, user needs to re-login');
+          // Token is invalid, clear auth state
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          setIsAuthenticated(false);
+          setUser(null);
+        }
       } else {
         setIsAuthenticated(false);
         setUser(null);
@@ -50,23 +68,29 @@ export const AuthProvider = ({ children }) => {
       console.log('Attempting login with:', credentials.email);
       const response = await api.post('/auth/login', credentials);
       
-      if (response.data.token && response.data.user) {
+      // Handle both response formats (with and without success field)
+      const responseData = response.data;
+      const token = responseData.token;
+      const userData = responseData.user;
+      
+      if (token && userData) {
         // Store authentication data
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data.user));
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(userData));
         
         // Update state
-        setUser(response.data.user);
+        setUser(userData);
         setIsAuthenticated(true);
         
-        console.log('Login successful, user set:', response.data.user);
-        return { success: true, user: response.data.user };
+        console.log('Login successful, user set:', userData);
+        return { success: true, user: userData };
       } else {
         throw new Error('Invalid login response');
       }
     } catch (error) {
       console.error('Login error:', error);
-      return { success: false, message: error.response?.data?.message || 'Login failed' };
+      const message = error.response?.data?.message || 'Login failed';
+      return { success: false, message };
     }
   };
 
@@ -78,12 +102,19 @@ export const AuthProvider = ({ children }) => {
     console.log('User logged out');
   };
 
+  const updateUser = (updatedUserData) => {
+    setUser(updatedUserData);
+    localStorage.setItem('user', JSON.stringify(updatedUserData));
+  };
+
   const value = {
     user,
     isAuthenticated,
     loading,
     login,
     logout,
+    updateUser,
+    checkAuthStatus,
     isAdmin: user?.role === 'admin'
   };
 
@@ -93,3 +124,9 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+
+// Export AuthContext for components that need direct access
+export { AuthContext };
+
+// Default export for convenience
+export default AuthContext;

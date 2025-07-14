@@ -10,58 +10,56 @@ import UserManagement from './components/Admin/UserManagement';
 import ScheduleManagement from './components/Admin/ScheduleManagement';
 import TaskList from './components/Tasks/TaskList';
 import ProjectList from './components/Projects/ProjectList';
+import ProjectDetails from './components/Projects/ProjectDetails';
+import UserTasks from './components/UserTasks';
+import ProfileEdit from './components/ProfileEdit';
 
 // Import i18n configuration
 import './i18n';
+import './App.css';
 
-// Protected Route Component - FIXED
-const ProtectedRoute = ({ children }) => {
+// Protected Route Component
+const ProtectedRoute = ({ children, adminOnly = false }) => {
   const { isAuthenticated, loading, user } = useAuth();
   
   console.log('ProtectedRoute: isAuthenticated =', isAuthenticated, 'loading =', loading, 'user =', user?.email);
   
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <div className="text-lg text-gray-600 font-medium">Loading...</div>
+      </div>
+    );
   }
   
   if (!isAuthenticated) {
     console.log('ProtectedRoute: Not authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
+
+  if (adminOnly && user?.role !== 'admin') {
+    console.log('ProtectedRoute: Admin access required, redirecting to dashboard');
+    return <Navigate to="/dashboard" replace />;
+  }
   
   console.log('ProtectedRoute: Authenticated, rendering children');
   return children;
 };
 
-// Admin Route Component - FIXED
-const AdminRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading, user } = useAuth();
-  
-  console.log('AdminRoute: isAuthenticated =', isAuthenticated, 'isAdmin =', isAdmin, 'loading =', loading);
-  
-  if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
-  }
-  
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-  
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-  
-  return children;
-};
-
-// Public Route Component - FIXED
+// Public Route Component (redirects if already authenticated)
 const PublicRoute = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
   
   console.log('PublicRoute: isAuthenticated =', isAuthenticated, 'loading =', loading);
   
   if (loading) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <div className="text-lg text-gray-600 font-medium">Loading...</div>
+      </div>
+    );
   }
   
   if (isAuthenticated) {
@@ -79,6 +77,7 @@ function App() {
       <Router>
         <div className="App">
           <Routes>
+            {/* Public Routes */}
             <Route path="/login" element={
               <PublicRoute>
                 <Login />
@@ -91,6 +90,7 @@ function App() {
               </PublicRoute>
             } />
             
+            {/* Protected Routes */}
             <Route path="/" element={
               <ProtectedRoute>
                 <Layout />
@@ -99,19 +99,30 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="schedule" element={<WorkSchedule />} />
-              <Route path="tasks" element={<TaskList />} />
               <Route path="projects" element={<ProjectList />} />
+              <Route path="projects/:id" element={<ProjectDetails />} />
+              <Route path="tasks" element={<TaskList />} />
+              <Route path="user-tasks" element={<UserTasks />} />
+              <Route path="profile" element={<ProfileEdit />} />
+              
+              {/* Admin Only Routes */}
               <Route path="admin/users" element={
-                <AdminRoute>
+                <ProtectedRoute adminOnly={true}>
                   <UserManagement />
-                </AdminRoute>
+                </ProtectedRoute>
               } />
               <Route path="admin/schedules" element={
-                <AdminRoute>
+                <ProtectedRoute adminOnly={true}>
                   <ScheduleManagement />
-                </AdminRoute>
+                </ProtectedRoute>
               } />
             </Route>
+
+            {/* Legacy redirect for timesheet (in case of bookmarks) */}
+            <Route path="/timesheet" element={<Navigate to="/dashboard" replace />} />
+
+            {/* Catch all route */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </div>
       </Router>

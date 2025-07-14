@@ -1,54 +1,64 @@
 import axios from 'axios';
 
-// Force localhost for local development
-const getApiUrl = () => {
-  return 'http://localhost:5000/api';
+// Determine the API base URL based on environment
+const getApiBaseUrl = () => {
+  // In production build, use the environment variable
+  if (process.env.REACT_APP_API_URL) {
+    return process.env.REACT_APP_API_URL;
+  }
+  
+  // In development, try to detect the current host
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return 'http://localhost:5000/api';
+  }
+  
+  // For VPN network access
+  if (window.location.hostname.startsWith('10.212.')) {
+    return `http://${window.location.hostname}:5000/api`;
+  }
+  
+  // Fallback to your VPN IP
+  return 'http://10.212.247.198:5000/api';
 };
 
+const API_BASE_URL = getApiBaseUrl();
+
+console.log('API Base URL:', API_BASE_URL);
+
+// Create axios instance
 const api = axios.create({
-  baseURL: getApiUrl(),
-  timeout: 10000,
+  baseURL: API_BASE_URL,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Add token to requests
+// Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
-      config.headers['x-auth-token'] = token;
-      console.log('API: Token added to request for', config.url);
+      config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
   (error) => {
-    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor for error handling
+// Response interceptor to handle auth errors
 api.interceptors.response.use(
   (response) => {
     return response;
   },
   (error) => {
-    console.error('API Error:', {
-      message: error.message,
-      status: error.response?.status,
-      url: error.config?.url,
-      data: error.response?.data
-    });
-
-    // Only clear auth on 401 for protected routes, not login
-    if (error.response?.status === 401 && error.config?.url !== '/auth/login') {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
       localStorage.removeItem('token');
-      localStorage.removeItem('user');
       window.location.href = '/login';
     }
-
     return Promise.reject(error);
   }
 );

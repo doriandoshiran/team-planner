@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Filter, CheckSquare, Clock, User, Edit, Trash2, Eye } from 'lucide-react';
+import { Plus, Search, Filter, CheckSquare, Clock, User, Edit, Trash2, Eye, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import TaskForm from './TaskForm';
-import api from '../../services/api';
+import { getTasks, deleteTask, updateTaskStatus } from '../../services/taskService';
 
 const TaskList = () => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -13,6 +13,7 @@ const TaskList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (isAuthenticated && !loading && user) {
@@ -26,12 +27,14 @@ const TaskList = () => {
   const fetchTasks = async () => {
     try {
       setDataLoading(true);
+      setError(null);
       console.log('TaskList: Fetching tasks...');
-      const response = await api.get('/tasks');
-      console.log('TaskList: Tasks fetched:', response.data);
-      setTasks(response.data);
+      const data = await getTasks();
+      console.log('TaskList: Tasks fetched:', data);
+      setTasks(data || []);
     } catch (error) {
       console.error('TaskList: Error fetching tasks:', error);
+      setError('Failed to load tasks');
       setTasks([]);
     } finally {
       setDataLoading(false);
@@ -40,8 +43,21 @@ const TaskList = () => {
 
   const handleCreateTask = async (taskData) => {
     try {
-      const response = await api.post('/tasks', taskData);
-      setTasks([response.data, ...tasks]);
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(taskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to create task');
+      }
+      
+      const newTask = await response.json();
+      setTasks([newTask, ...tasks]);
       setShowTaskForm(false);
     } catch (error) {
       console.error('Error creating task:', error);
@@ -51,8 +67,21 @@ const TaskList = () => {
 
   const handleUpdateTask = async (taskData) => {
     try {
-      const response = await api.put(`/tasks/${editingTask._id}`, taskData);
-      setTasks(tasks.map(t => t._id === editingTask._id ? response.data : t));
+      const response = await fetch(`/api/tasks/${editingTask._id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(taskData)
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to update task');
+      }
+      
+      const updatedTask = await response.json();
+      setTasks(tasks.map(t => t._id === editingTask._id ? updatedTask : t));
       setShowTaskForm(false);
       setEditingTask(null);
     } catch (error) {
@@ -64,7 +93,7 @@ const TaskList = () => {
   const handleDeleteTask = async (task) => {
     if (window.confirm(`Are you sure you want to delete "${task.title}"?`)) {
       try {
-        await api.delete(`/tasks/${task._id}`);
+        await deleteTask(task._id);
         setTasks(tasks.filter(t => t._id !== task._id));
       } catch (error) {
         console.error('Error deleting task:', error);
@@ -75,8 +104,8 @@ const TaskList = () => {
 
   const handleStatusChange = async (task, newStatus) => {
     try {
-      const response = await api.patch(`/tasks/${task._id}/status`, { status: newStatus });
-      setTasks(tasks.map(t => t._id === task._id ? response.data : t));
+      const updatedTask = await updateTaskStatus(task._id, newStatus);
+      setTasks(tasks.map(t => t._id === task._id ? updatedTask : t));
     } catch (error) {
       console.error('Error updating task status:', error);
       alert('Failed to update task status');
@@ -84,7 +113,7 @@ const TaskList = () => {
   };
 
   const filteredTasks = tasks.filter(task => {
-    const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          task.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || task.priority === priorityFilter;
@@ -110,10 +139,20 @@ const TaskList = () => {
     }
   };
 
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'todo': return <Clock className="h-4 w-4" />;
+      case 'inprogress': return <RefreshCw className="h-4 w-4" />;
+      case 'done': return <CheckSquare className="h-4 w-4" />;
+      default: return <Clock className="h-4 w-4" />;
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-lg">Loading...</div>
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-lg">Loading...</span>
       </div>
     );
   }
@@ -121,32 +160,48 @@ const TaskList = () => {
   if (dataLoading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <div className="text-lg">Loading tasks...</div>
+        <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-lg">Loading tasks...</span>
       </div>
     );
   }
 
   return (
-    <div>
+    <div className="max-w-7xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tasks</h1>
           <p className="text-gray-600">Manage your tasks and track progress</p>
         </div>
-        <button
-          onClick={() => {
-            setEditingTask(null);
-            setShowTaskForm(true);
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center space-x-2 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New Task</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={fetchTasks}
+            className="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 flex items-center space-x-2 transition-colors"
+          >
+            <RefreshCw className="h-4 w-4" />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={() => {
+              setEditingTask(null);
+              setShowTaskForm(true);
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center space-x-2 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New Task</span>
+          </button>
+        </div>
       </div>
 
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
+          <p className="text-red-800">{error}</p>
+        </div>
+      )}
+
       {/* Search and Filters */}
-      <div className="flex space-x-4 mb-6">
+      <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-6">
         <div className="flex-1 relative">
           <Search className="h-5 w-5 absolute left-3 top-3 text-gray-400" />
           <input
@@ -180,7 +235,55 @@ const TaskList = () => {
         </select>
       </div>
 
-      {/* Tasks List - IMPROVED STYLING */}
+      {/* Task Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-white p-4 rounded-lg shadow border">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <CheckSquare className="h-8 w-8 text-gray-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-500">Total Tasks</p>
+              <p className="text-2xl font-semibold text-gray-900">{tasks.length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow border">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <Clock className="h-8 w-8 text-gray-400" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-500">To Do</p>
+              <p className="text-2xl font-semibold text-gray-900">{tasks.filter(t => t.status === 'todo').length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow border">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <RefreshCw className="h-8 w-8 text-blue-500" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-500">In Progress</p>
+              <p className="text-2xl font-semibold text-gray-900">{tasks.filter(t => t.status === 'inprogress').length}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow border">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <CheckSquare className="h-8 w-8 text-green-500" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-500">Completed</p>
+              <p className="text-2xl font-semibold text-gray-900">{tasks.filter(t => t.status === 'done').length}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Tasks List */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
         {filteredTasks.length > 0 ? (
           <div className="divide-y divide-gray-200">
@@ -189,12 +292,15 @@ const TaskList = () => {
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-3 mb-2">
-                      <h3 className="text-lg font-medium text-gray-900 truncate">{task.title}</h3>
+                      <div className="flex items-center space-x-2">
+                        {getStatusIcon(task.status)}
+                        <h3 className="text-lg font-medium text-gray-900 truncate">{task.title}</h3>
+                      </div>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(task.status)}`}>
                         {task.status === 'todo' ? 'To Do' : task.status === 'inprogress' ? 'In Progress' : 'Done'}
                       </span>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)}`}>
-                        {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                        {task.priority?.charAt(0).toUpperCase() + task.priority?.slice(1)}
                       </span>
                     </div>
                     
@@ -206,7 +312,7 @@ const TaskList = () => {
                       {task.userId && (
                         <div className="flex items-center space-x-1">
                           <User className="h-4 w-4" />
-                          <span>{task.userId.name}</span>
+                          <span>{task.userId.name || task.userId}</span>
                         </div>
                       )}
                       {task.dueDate && (
@@ -215,12 +321,17 @@ const TaskList = () => {
                           <span>Due: {new Date(task.dueDate).toLocaleDateString()}</span>
                         </div>
                       )}
+                      {task.createdAt && (
+                        <div className="flex items-center space-x-1">
+                          <span>Created: {new Date(task.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
-                  {/* IMPROVED ACTION BUTTONS */}
+                  {/* Action Buttons */}
                   <div className="flex items-center space-x-3 ml-4">
-                    {/* Status Dropdown - IMPROVED */}
+                    {/* Status Dropdown */}
                     <div className="relative">
                       <select
                         value={task.status}
@@ -238,7 +349,7 @@ const TaskList = () => {
                       </div>
                     </div>
                     
-                    {/* Action Buttons - IMPROVED */}
+                    {/* Action Buttons */}
                     <div className="flex items-center space-x-1">
                       <button
                         onClick={() => {

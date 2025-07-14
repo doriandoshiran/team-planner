@@ -1,15 +1,118 @@
-.App {
-  text-align: center;
+/* Reset and fix alignment issues */
+.text-left {
+  text-align: left !important;
 }
 
-.App-header {
-  background-color: #282c34;
-  padding: 20px;
-  color: white;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+.text-start {
+  text-align: start !important;
+}
+
+/* Ensure flex items align to start by default */
+.flex-start {
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+}
+
+/* Fix for centered elements that should be left-aligned */
+.sidebar-item {
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+
+.user-card {
+  text-align: left !important;
+}
+
+.form-label {
+  text-align: left !important;
+}
+
+.nav-item {
+  text-align: left !important;
+}
+
+/* Specific fixes for common components */
+.team-member-card {
+  text-align: left !important;
+}
+
+.team-member-card .flex {
+  justify-content: flex-start !important;
+}
+
+.team-member-card span {
+  text-align: left !important;
+}
+
+/* Fix for task list items */
+.task-item {
+  text-align: left !important;
+}
+
+.task-item .flex {
+  justify-content: flex-start !important;
+}
+
+/* Fix for schedule items */
+.schedule-item {
+  text-align: left !important;
+}
+
+/* Fix for form elements */
+.form-group label {
+  text-align: left !important;
+}
+
+.form-group input {
+  text-align: left !important;
+}
+
+.form-group textarea {
+  text-align: left !important;
+}
+
+/* Fix for navigation items */
+.nav-link {
+  text-align: left !important;
+  justify-content: flex-start !important;
+}
+
+/* Fix for user profile elements */
+.profile-info {
+  text-align: left !important;
+}
+
+.profile-info .flex {
+  justify-content: flex-start !important;
+}
+
+/* Animation fixes */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.notification-enter {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.notification-exit {
+  animation: slideOutRight 0.3s ease-in;
 }

@@ -12,16 +12,23 @@ const ScheduleManagement = () => {
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [selectedDate, setSelectedDate] = useState(null);
   const [dayOffReason, setDayOffReason] = useState('');
-  // FIXED: Move currentDate to top level - not conditional
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchEmployees();
   }, []);
 
+  useEffect(() => {
+    if (employees.length > 0) {
+      fetchAllSchedules(employees);
+    }
+  }, [currentDate]);
+
   const fetchEmployees = async () => {
     try {
       setLoading(true);
+      setError('');
       const response = await api.get('/auth/users');
       setEmployees(response.data);
 
@@ -29,6 +36,7 @@ const ScheduleManagement = () => {
       await fetchAllSchedules(response.data);
     } catch (error) {
       console.error('Error fetching employees:', error);
+      setError('Failed to fetch employees');
       setEmployees([]);
     } finally {
       setLoading(false);
@@ -41,8 +49,8 @@ const ScheduleManagement = () => {
       
       for (const user of users) {
         try {
-          // Load individual user schedule from database
-          const response = await api.get(`/schedules/user/${user.id}`);
+          // Load individual user schedule from database using the correct API endpoint
+          const response = await api.get(`/schedules/my-schedule?userId=${user.id}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
           allSchedules[user.id] = response.data;
         } catch (error) {
           console.error(`Error fetching schedule for user ${user.id}:`, error);
@@ -53,18 +61,34 @@ const ScheduleManagement = () => {
       setSchedules(allSchedules);
     } catch (error) {
       console.error('Error fetching all schedules:', error);
+      setError('Failed to fetch schedules');
     }
   };
 
-  const saveSchedulesToDatabase = async (userId, userSchedule) => {
+  const saveSchedulesToDatabase = async (userId, date, scheduleData) => {
     try {
-      await api.post('/schedules/admin/set-schedule', {
+      // Prepare the payload based on the schedule data type
+      let payload = {
         userId,
-        schedules: userSchedule
-      });
+        date
+      };
+
+      if (typeof scheduleData === 'object' && scheduleData.type === 'dayoff') {
+        // For day-off with reason
+        payload.type = 'dayoff';
+        payload.reason = scheduleData.reason;
+      } else {
+        // For simple location types
+        payload.type = scheduleData;
+      }
+
+      console.log('Sending payload to API:', payload);
+
+      await api.post('/schedules/admin/set-schedule', payload);
       console.log('Schedule saved to database successfully');
     } catch (error) {
       console.error('Error saving schedule to database:', error);
+      console.error('Error details:', error.response?.data);
       throw error;
     }
   };
@@ -73,13 +97,14 @@ const ScheduleManagement = () => {
     setSelectedEmployee(employee);
   };
 
-  // FIXED: Use proper local date formatting
   const handleDateClick = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const dateStr = `${year}-${month}-${day}`;
     setSelectedDate(dateStr);
+    setSelectedLocation('');
+    setDayOffReason('');
     setShowDateRangeModal(true);
   };
 
@@ -90,94 +115,121 @@ const ScheduleManagement = () => {
     }
     
     setSelectedLocation(location);
+    setSelectedDate(null);
+    setDayOffReason('');
     setShowDateRangeModal(true);
   };
 
   const applySingleDay = async (date, location, reason = '') => {
     if (!selectedEmployee) return;
 
-    const scheduleData = location === 'dayoff' && reason
-      ? { type: location, reason }
-      : location;
-
-    const newSchedules = {
-      ...schedules,
-      [selectedEmployee.id]: {
-        ...schedules[selectedEmployee.id],
-        [date]: scheduleData
-      }
-    };
-
-    setSchedules(newSchedules);
-    
     try {
-      await saveSchedulesToDatabase(selectedEmployee.id, newSchedules[selectedEmployee.id]);
+      setError('');
+      
+      const scheduleData = location === 'dayoff' && reason
+        ? { type: location, reason }
+        : location;
+
+      // Update local state first
+      const newSchedules = {
+        ...schedules,
+        [selectedEmployee.id]: {
+          ...schedules[selectedEmployee.id],
+          [date]: scheduleData
+        }
+      };
+
+      setSchedules(newSchedules);
+      
+      // Save to database
+      await saveSchedulesToDatabase(selectedEmployee.id, date, scheduleData);
+      
+      // Reset form state
+      setSelectedLocation('');
+      setDayOffReason('');
+      
     } catch (error) {
-      alert('Failed to save schedule. Please try again.');
-      setSchedules(schedules);
+      console.error('Error applying single day schedule:', error);
+      setError('Failed to save schedule. Please try again.');
+      // Revert local state on error
+      await fetchAllSchedules(employees);
     }
   };
 
   const applyDateRange = async () => {
     if (!selectedEmployee || !dateRange.start || !dateRange.end || !selectedLocation) return;
 
-    // FIXED: Parse as local dates to avoid timezone issues
-    const startParts = dateRange.start.split('-').map(Number);
-    const endParts = dateRange.end.split('-').map(Number);
-    const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
-    const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
-
-    const newSchedule = { ...schedules[selectedEmployee.id] };
-
-    const scheduleData = selectedLocation === 'dayoff' && dayOffReason
-      ? { type: selectedLocation, reason: dayOffReason }
-      : selectedLocation;
-
-    const currentDateIter = new Date(start);
-    while (currentDateIter <= end) {
-      const dayOfWeek = currentDateIter.getDay();
-      
-      if (
-        selectedLocation === 'vacation' ||
-        selectedLocation === 'dayoff' ||
-        (dayOfWeek >= 1 && dayOfWeek <= 5)
-      ) {
-        // FIXED: Use local date string formatting instead of toISOString()
-        const year = currentDateIter.getFullYear();
-        const month = String(currentDateIter.getMonth() + 1).padStart(2, '0');
-        const day = String(currentDateIter.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-        
-        newSchedule[dateStr] = scheduleData;
-      }
-      currentDateIter.setDate(currentDateIter.getDate() + 1);
-    }
-
-    const newSchedules = {
-      ...schedules,
-      [selectedEmployee.id]: newSchedule
-    };
-
-    setSchedules(newSchedules);
-    
     try {
-      await saveSchedulesToDatabase(selectedEmployee.id, newSchedule);
+      setError('');
+      
+      const startParts = dateRange.start.split('-').map(Number);
+      const endParts = dateRange.end.split('-').map(Number);
+      const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
+      const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
+
+      const newSchedule = { ...schedules[selectedEmployee.id] };
+
+      const scheduleData = selectedLocation === 'dayoff' && dayOffReason
+        ? { type: selectedLocation, reason: dayOffReason }
+        : selectedLocation;
+
+      const currentDateIter = new Date(start);
+      const datesToSave = [];
+
+      while (currentDateIter <= end) {
+        const dayOfWeek = currentDateIter.getDay();
+        
+        if (
+          selectedLocation === 'vacation' ||
+          selectedLocation === 'dayoff' ||
+          (dayOfWeek >= 1 && dayOfWeek <= 5)
+        ) {
+          const year = currentDateIter.getFullYear();
+          const month = String(currentDateIter.getMonth() + 1).padStart(2, '0');
+          const day = String(currentDateIter.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+          
+          newSchedule[dateStr] = scheduleData;
+          datesToSave.push(dateStr);
+        }
+        currentDateIter.setDate(currentDateIter.getDate() + 1);
+      }
+
+      // Update local state
+      const newSchedules = {
+        ...schedules,
+        [selectedEmployee.id]: newSchedule
+      };
+      setSchedules(newSchedules);
+
+      // Save all dates to database
+      for (const dateStr of datesToSave) {
+        try {
+          await saveSchedulesToDatabase(selectedEmployee.id, dateStr, scheduleData);
+        } catch (error) {
+          console.error(`Error saving schedule for ${dateStr}:`, error);
+          setError(`Failed to save schedule for ${dateStr}`);
+        }
+      }
+      
+      // Close modal and reset form
       setShowDateRangeModal(false);
       setDateRange({ start: '', end: '' });
       setSelectedLocation('');
       setSelectedDate(null);
       setDayOffReason('');
+      
     } catch (error) {
-      alert('Failed to save schedule. Please try again.');
-      setSchedules(schedules);
+      console.error('Error applying date range:', error);
+      setError('Failed to apply date range. Please try again.');
+      // Refresh schedules on error
+      await fetchAllSchedules(employees);
     }
   };
 
-  // FIXED: Clear month functionality - use the current month view, not system date
   const clearMonthSchedule = async () => {
     if (!selectedEmployee) return;
     
-    // FIXED: Use the calendar's current month, not today's date
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
     
@@ -186,6 +238,7 @@ const ScheduleManagement = () => {
     }
     
     try {
+      setError('');
       await api.delete('/schedules/admin/clear-schedule', {
         data: {
           userId: selectedEmployee.id,
@@ -199,7 +252,42 @@ const ScheduleManagement = () => {
       alert(`Cleared schedule for ${selectedEmployee.name}`);
     } catch (error) {
       console.error('Error clearing schedule:', error);
-      alert('Failed to clear schedule');
+      setError('Failed to clear schedule');
+    }
+  };
+
+  const removeScheduleEntry = async (date) => {
+    if (!selectedEmployee) return;
+    
+    try {
+      setError('');
+      
+      // Remove from local state
+      const newSchedules = {
+        ...schedules,
+        [selectedEmployee.id]: {
+          ...schedules[selectedEmployee.id]
+        }
+      };
+      delete newSchedules[selectedEmployee.id][date];
+      setSchedules(newSchedules);
+      
+      // Remove from database
+      await api.delete(`/schedules/admin/remove-schedule`, {
+        data: {
+          userId: selectedEmployee.id,
+          date
+        }
+      });
+      
+      setShowDateRangeModal(false);
+      setSelectedDate(null);
+      
+    } catch (error) {
+      console.error('Error removing schedule entry:', error);
+      setError('Failed to remove schedule entry');
+      // Refresh on error
+      await fetchAllSchedules(employees);
     }
   };
 
@@ -214,6 +302,7 @@ const ScheduleManagement = () => {
       remote: 0,
       vacation: 0,
       dayoff: 0,
+      sick: 0,
       total: 0
     };
 
@@ -243,6 +332,7 @@ const ScheduleManagement = () => {
       case 'remote': return <Home className="h-3 w-3" />;
       case 'vacation': return <Plane className="h-3 w-3" />;
       case 'dayoff': return <HelpCircle className="h-3 w-3" />;
+      case 'sick': return <Stethoscope className="h-3 w-3" />;
       default: return null;
     }
   };
@@ -254,6 +344,7 @@ const ScheduleManagement = () => {
       case 'remote': return 'bg-green-600 text-white';
       case 'vacation': return 'bg-purple-600 text-white';
       case 'dayoff': return 'bg-orange-600 text-white';
+      case 'sick': return 'bg-red-600 text-white';
       default: return 'bg-gray-600 text-white';
     }
   };
@@ -329,6 +420,12 @@ const ScheduleManagement = () => {
         </div>
       </div>
 
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
+          <p className="text-red-800">{error}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
           <div className="bg-white shadow rounded-lg p-4">
@@ -375,6 +472,11 @@ const ScheduleManagement = () => {
                         {stats.dayoff > 0 && (
                           <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs">
                             Day-off: {stats.dayoff}
+                          </span>
+                        )}
+                        {stats.sick > 0 && (
+                          <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">
+                            Sick: {stats.sick}
                           </span>
                         )}
                       </div>
@@ -425,7 +527,7 @@ const ScheduleManagement = () => {
         </div>
       </div>
 
-      {/* Modal code - same as before */}
+      {/* Modal for date range and single day selection */}
       {showDateRangeModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -456,6 +558,11 @@ const ScheduleManagement = () => {
                   <div className="text-sm text-blue-800">
                     <strong>Date:</strong> {new Date(selectedDate).toLocaleDateString()}
                   </div>
+                  {getEmployeeSchedule()[selectedDate] && (
+                    <div className="text-sm text-blue-800">
+                      <strong>Current:</strong> {getLocationLabel(getEmployeeSchedule()[selectedDate])}
+                    </div>
+                  )}
                 </div>
 
                 {selectedLocation !== 'dayoff' ? (
@@ -505,6 +612,18 @@ const ScheduleManagement = () => {
                         <span>Day-off</span>
                       </button>
                     </div>
+                    
+                    {getEmployeeSchedule()[selectedDate] && (
+                      <div className="mt-4">
+                        <button
+                          onClick={() => removeScheduleEntry(selectedDate)}
+                          className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 flex items-center justify-center space-x-2"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span>Remove Schedule Entry</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -537,6 +656,12 @@ const ScheduleManagement = () => {
                       className="w-full px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50"
                     >
                       Apply Day-off
+                    </button>
+                    <button
+                      onClick={() => setSelectedLocation('')}
+                      className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                    >
+                      Back to Options
                     </button>
                   </div>
                 )}
@@ -662,7 +787,6 @@ const EnhancedMonthView = ({ schedule, onDateClick, getLocationIcon, getLocation
     return days;
   };
 
-  // FIXED: Use proper local date formatting
   const formatDate = (date) => {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -743,6 +867,7 @@ const EnhancedMonthView = ({ schedule, onDateClick, getLocationIcon, getLocation
               case 'remote': bgColor = 'bg-green-100 hover:bg-green-200'; break;
               case 'vacation': bgColor = 'bg-purple-100 hover:bg-purple-200'; break;
               case 'dayoff': bgColor = 'bg-orange-100 hover:bg-orange-200'; break;
+              case 'sick': bgColor = 'bg-red-100 hover:bg-red-200'; break;
             }
           }
 
@@ -764,7 +889,7 @@ const EnhancedMonthView = ({ schedule, onDateClick, getLocationIcon, getLocation
                 <div className="absolute bottom-1 left-1 right-1">
                   <div className={`text-center text-xs font-medium py-1 rounded flex items-center justify-center ${getLocationColor(location)}`}>
                     {getLocationIcon(location)}
-                    <span className="ml-1">{getLocationLabel(location)}</span>
+                    <span className="ml-1 truncate">{getLocationLabel(location)}</span>
                   </div>
                 </div>
               )}
@@ -797,6 +922,12 @@ const EnhancedMonthView = ({ schedule, onDateClick, getLocationIcon, getLocation
             <Heart className="h-2 w-2 text-white" />
           </div>
           <span>Day-off</span>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-4 h-4 bg-red-600 rounded flex items-center justify-center">
+            <Stethoscope className="h-2 w-2 text-white" />
+          </div>
+          <span>Sick</span>
         </div>
         <div className="flex items-center space-x-2">
           <div className="w-4 h-4 bg-gray-100 border border-gray-300 rounded"></div>
