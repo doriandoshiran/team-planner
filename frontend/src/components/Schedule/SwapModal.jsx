@@ -30,6 +30,7 @@ const SwapModal = ({ isOpen, onClose, selectedUser, selectedDate, currentUserSch
     setError('');
 
     try {
+      // Fixed: Use targetUserId to match your backend route
       await api.post('/schedules/swap-request', {
         targetUserId: selectedUser.id,
         requestedDate: selectedDate,
@@ -43,7 +44,15 @@ const SwapModal = ({ isOpen, onClose, selectedUser, selectedDate, currentUserSch
 
     } catch (error) {
       console.error('Error sending swap request:', error);
-      setError(error.response?.data?.message || 'Failed to send swap request. Please try again.');
+      
+      // Enhanced error handling
+      if (error.response?.status === 400) {
+        setError(error.response.data.message || 'Invalid request data');
+      } else if (error.response?.status === 500) {
+        setError('Server error. Please try again later.');
+      } else {
+        setError(error.response?.data?.message || 'Failed to send swap request. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

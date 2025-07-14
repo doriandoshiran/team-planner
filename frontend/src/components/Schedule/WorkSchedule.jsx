@@ -46,9 +46,18 @@ const WorkSchedule = () => {
 
   const fetchSchedule = async () => {
     try {
-      console.log('Fetching schedule for user:', user?.id);
-      const response = await api.get(`/schedules/my-schedule?month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
-      setSchedule(response.data);
+      const userId = user.id || user._id;
+      console.log('Fetching schedule for user:', userId);
+      
+      const response = await api.get(`/schedules/my-schedule?userId=${userId}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
+      
+      // Handle the response structure from your backend
+      if (response.data && response.data.success) {
+        setSchedule(response.data.data);
+      } else {
+        setSchedule(response.data);
+      }
+      
       console.log('Schedule loaded from database:', response.data);
     } catch (error) {
       console.error('Error fetching schedule:', error);
@@ -59,7 +68,17 @@ const WorkSchedule = () => {
   const fetchNotifications = async () => {
     try {
       const response = await api.get('/schedules/notifications');
-      const notificationsData = Array.isArray(response.data) ? response.data : [];
+      
+      // Handle the response structure from your backend
+      let notificationsData;
+      if (response.data && response.data.success) {
+        notificationsData = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        notificationsData = response.data;
+      } else {
+        notificationsData = [];
+      }
+      
       setNotifications(notificationsData);
       console.log('Notifications loaded:', notificationsData);
     } catch (error) {
@@ -104,29 +123,62 @@ const WorkSchedule = () => {
       setLoading(true);
       setError('');
 
-      // Get all users
+      // Get all users with proper response handling
       const usersResponse = await api.get('/auth/users');
       
+      // Handle different response structures
+      let usersData;
+      if (usersResponse.data && usersResponse.data.success && usersResponse.data.data) {
+        usersData = usersResponse.data.data;
+      } else if (usersResponse.data && usersResponse.data.users) {
+        usersData = usersResponse.data.users;
+      } else if (Array.isArray(usersResponse.data)) {
+        usersData = usersResponse.data;
+      } else {
+        usersData = usersResponse.data;
+      }
+      
+      console.log('Fetched users:', usersData);
+      
+      // Ensure we have an array
+      if (!Array.isArray(usersData)) {
+        throw new Error('Invalid users data structure');
+      }
+      
       // Extract unique departments
-      const uniqueDepartments = [...new Set(usersResponse.data.map(user => user.department).filter(Boolean))];
+      const uniqueDepartments = [...new Set(usersData.map(userData => userData.department).filter(Boolean))];
       setDepartments(uniqueDepartments);
 
       // Load schedules from database for each user
       const teamWithSchedules = [];
-      for (const userData of usersResponse.data) {
+      const currentUserId = user.id || user._id;
+      
+      for (const userData of usersData) {
+        const userId = userData.id || userData._id;
+        
         try {
-          const scheduleResponse = await api.get(`/schedules/my-schedule?userId=${userData.id}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
+          const scheduleResponse = await api.get(`/schedules/my-schedule?userId=${userId}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
+          
+          let userSchedule;
+          if (scheduleResponse.data && scheduleResponse.data.success) {
+            userSchedule = scheduleResponse.data.data;
+          } else {
+            userSchedule = scheduleResponse.data;
+          }
+          
           teamWithSchedules.push({
             ...userData,
-            schedule: scheduleResponse.data,
-            canSwapWith: userData.id !== user?.id
+            id: userId, // Ensure consistent ID
+            schedule: userSchedule,
+            canSwapWith: userId !== currentUserId
           });
         } catch (error) {
-          console.error(`Error fetching schedule for user ${userData.id}:`, error);
+          console.error(`Error fetching schedule for user ${userId}:`, error);
           teamWithSchedules.push({
             ...userData,
+            id: userId,
             schedule: {},
-            canSwapWith: userData.id !== user?.id
+            canSwapWith: userId !== currentUserId
           });
         }
       }
@@ -227,6 +279,7 @@ const WorkSchedule = () => {
       case 'remote': return <Home className="h-3 w-3" />;
       case 'vacation': return <Plane className="h-3 w-3" />;
       case 'dayoff': return <HelpCircle className="h-3 w-3" />;
+      case 'sick': return <Stethoscope className="h-3 w-3" />;
       default: return null;
     }
   };
@@ -240,6 +293,7 @@ const WorkSchedule = () => {
       case 'remote': return 'bg-green-600 text-white';
       case 'vacation': return 'bg-purple-600 text-white';
       case 'dayoff': return 'bg-orange-600 text-white';
+      case 'sick': return 'bg-red-600 text-white';
       default: return 'bg-gray-600 text-white';
     }
   };
@@ -372,11 +426,55 @@ const WorkSchedule = () => {
     return days;
   };
 
+  // Team member rendering with avatar support
+  const renderTeamMember = (userData) => {
+    return (
+      <div className="flex items-center space-x-3">
+        {/* Avatar with fallback */}
+        {userData.avatarUrl ? (
+          <img 
+            src={userData.avatarUrl} 
+            alt={userData.name}
+            className="w-10 h-10 rounded-full object-cover border-2 border-gray-200 shadow-md"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'flex';
+            }}
+          />
+        ) : null}
+        <div 
+          className="w-10 h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md"
+          style={{ display: userData.avatarUrl ? 'none' : 'flex' }}
+        >
+          {userData.name?.charAt(0) || 'U'}
+        </div>
+        
+        {/* User details */}
+        <div>
+          <div className="font-semibold text-gray-900">{userData.name}</div>
+          <div className="text-sm text-gray-600">{userData.email}</div>
+          {userData.department && (
+            <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full inline-block mt-1">
+              {userData.department}
+            </div>
+          )}
+          <div className={`text-xs text-white px-2 py-1 rounded-full inline-block mt-1 ml-2 ${
+            userData.role === 'admin' ? 'bg-gradient-to-r from-red-500 to-red-600' : 
+            userData.role === 'manager' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : 
+            'bg-gradient-to-r from-gray-500 to-gray-600'
+          }`}>
+            {userData.role ? userData.role.charAt(0).toUpperCase() + userData.role.slice(1) : 'User'}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Filter team schedules based on department and search term
   const filteredTeamSchedules = teamSchedules.filter(userData => {
     const matchesDepartment = !selectedDepartment || userData.department === selectedDepartment;
-    const matchesSearch = userData.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         userData.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = userData.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         userData.email?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesDepartment && matchesSearch;
   });
 
@@ -584,6 +682,7 @@ const WorkSchedule = () => {
                   case 'remote': bgColor = 'bg-green-100 hover:bg-green-200'; break;
                   case 'vacation': bgColor = 'bg-purple-100 hover:bg-purple-200'; break;
                   case 'dayoff': bgColor = 'bg-orange-100 hover:bg-orange-200'; break;
+                  case 'sick': bgColor = 'bg-red-100 hover:bg-red-200'; break;
                 }
               }
 
@@ -715,7 +814,10 @@ const WorkSchedule = () => {
               <Users className="h-16 w-16 text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold text-gray-700 mb-2">No Team Members Found</h3>
               <p className="text-gray-500 mb-6 max-w-md">
-                No team members match your current filters. Try adjusting your search or department filter.
+                {teamSchedules.length === 0 
+                  ? "Unable to load team members. Please check your connection and try again."
+                  : "No team members match your current filters. Try adjusting your search or department filter."
+                }
               </p>
               <button
                 onClick={fetchTeamSchedules}
@@ -741,31 +843,11 @@ const WorkSchedule = () => {
                 </thead>
                 <tbody>
                   {filteredTeamSchedules.map((userData, index) => (
-                    <tr key={userData.id} className={`hover:bg-gray-50 transition-colors ${
+                    <tr key={userData.id || userData._id || index} className={`hover:bg-gray-50 transition-colors ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
                     }`}>
                       <td className="p-4 border-b border-gray-200 bg-white sticky left-0 z-10 shadow-sm">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md">
-                            {userData.name?.charAt(0) || 'U'}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-gray-900">{userData.name}</div>
-                            <div className="text-sm text-gray-600">{userData.email}</div>
-                            {userData.department && (
-                              <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full inline-block mt-1">
-                                {userData.department}
-                              </div>
-                            )}
-                            <div className={`text-xs text-white px-2 py-1 rounded-full inline-block mt-1 ml-2 ${
-                              userData.role === 'admin' ? 'bg-gradient-to-r from-red-500 to-red-600' : 
-                              userData.role === 'manager' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : 
-                              'bg-gradient-to-r from-gray-500 to-gray-600'
-                            }`}>
-                              {userData.role.charAt(0).toUpperCase() + userData.role.slice(1)}
-                            </div>
-                          </div>
-                        </div>
+                        {renderTeamMember(userData)}
                       </td>
                       {renderTeamUserRow(userData)}
                     </tr>

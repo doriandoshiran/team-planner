@@ -1,6 +1,18 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
+// Helper function for avatar URL generation
+const generateAvatarUrl = (user) => {
+  try {
+    if (user.avatar && user.avatar.data && user.avatar.contentType) {
+      return `data:${user.avatar.contentType};base64,${user.avatar.data.toString('base64')}`;
+    }
+  } catch (error) {
+    console.error('Error generating avatar URL:', error);
+  }
+  return null;
+};
+
 // Generate JWT token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -29,7 +41,7 @@ const register = async (req, res) => {
       name,
       email,
       password,
-      role: role || 'member'
+      role: role || 'user'
     });
 
     // Create token
@@ -103,6 +115,9 @@ const login = async (req, res) => {
     // Create token
     const token = generateToken(user._id);
 
+    // Generate avatar URL for response
+    const avatarUrl = generateAvatarUrl(user);
+
     res.status(200).json({
       success: true,
       token,
@@ -111,7 +126,7 @@ const login = async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        avatar: user.avatar,
+        avatarUrl: avatarUrl,
         department: user.department,
         position: user.position
       }
@@ -131,9 +146,35 @@ const getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
 
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Generate avatar URL
+    const avatarUrl = generateAvatarUrl(user);
+
     res.status(200).json({
       success: true,
-      user
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        bio: user.bio,
+        contacts: user.contacts,
+        cybersecuritySkills: user.cybersecuritySkills,
+        ctfs: user.ctfs,
+        discordId: user.discordId,
+        discordUsername: user.discordUsername,
+        avatarUrl: avatarUrl,
+        lastLogin: user.lastLogin,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
     });
   } catch (error) {
     res.status(500).json({

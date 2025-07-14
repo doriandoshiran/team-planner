@@ -142,25 +142,60 @@ router.get('/avatar/:userId', auth, async (req, res) => {
   }
 });
 
-// Get all users (admin only)
+// Get all users - MODIFIED: Include avatar data and accessible to all authenticated users
 router.get('/users', auth, async (req, res) => {
   try {
     console.log('Authenticated user requesting users:', req.user.id);
     
-    // Get users without password field
-    const users = await User.find({}, { password: 0 }).sort({ createdAt: -1 });
-    console.log('Fetching users, found:', users.length);
+    if (!req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'User ID not found in request'
+      });
+    }
+
+    const currentUser = await User.findById(req.user.id);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Current user not found'
+      });
+    }
+
+    // Get users with avatar data
+    const users = await User.find({}, { 
+      password: 0 
+    })
+    .select('name email department role discordId isActive createdAt avatar')
+    .sort({ name: 1 });
+    
+    // Process users to include avatar URLs
+    const usersWithAvatars = users.map(user => {
+      const userObj = user.toObject();
+      
+      // Generate avatar URL if avatar exists
+      if (user.avatar && user.avatar.data && user.avatar.contentType) {
+        userObj.avatarUrl = `data:${user.avatar.contentType};base64,${user.avatar.data.toString('base64')}`;
+      }
+      
+      // Remove raw avatar data from response for performance
+      delete userObj.avatar;
+      
+      return userObj;
+    });
+    
+    console.log('Fetching users, found:', usersWithAvatars.length);
     
     res.status(200).json({
       success: true,
-      count: users.length,
-      data: users
+      count: usersWithAvatars.length,
+      data: usersWithAvatars
     });
   } catch (error) {
     console.error('Error fetching users:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error fetching users'
     });
   }
 });
@@ -170,12 +205,27 @@ router.put('/users/:userId/role', auth, async (req, res) => {
   try {
     const { role } = req.body;
     
-    // Check if current user is admin
     const currentUser = await User.findById(req.user.id);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Current user not found'
+      });
+    }
+
     if (currentUser.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    // Validate role
+    const validRoles = ['user', 'admin', 'manager'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role. Must be: user, admin, or manager'
       });
     }
 
@@ -191,6 +241,8 @@ router.put('/users/:userId/role', auth, async (req, res) => {
         message: 'User not found'
       });
     }
+
+    console.log(`Admin ${currentUser.email} updated role for user ${user.email} to ${role}`);
 
     res.status(200).json({
       success: true,
@@ -211,12 +263,26 @@ router.put('/users/:userId/status', auth, async (req, res) => {
   try {
     const { isActive } = req.body;
     
-    // Check if current user is admin
     const currentUser = await User.findById(req.user.id);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Current user not found'
+      });
+    }
+
     if (currentUser.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    // Validate isActive
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isActive must be a boolean value'
       });
     }
 
@@ -233,6 +299,8 @@ router.put('/users/:userId/status', auth, async (req, res) => {
       });
     }
 
+    console.log(`Admin ${currentUser.email} ${isActive ? 'activated' : 'deactivated'} user ${user.email}`);
+
     res.status(200).json({
       success: true,
       message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
@@ -243,6 +311,61 @@ router.put('/users/:userId/status', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error updating user status'
+    });
+  }
+});
+
+// Delete user (admin only)
+router.delete('/users/:userId', auth, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.id);
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Current user not found'
+      });
+    }
+
+    if (currentUser.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin privileges required.'
+      });
+    }
+
+    // Prevent admin from deleting themselves
+    if (req.params.userId === req.user.id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete your own account'
+      });
+    }
+
+    const user = await User.findByIdAndDelete(req.params.userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    console.log(`Admin ${currentUser.email} deleted user ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully',
+      deletedUser: {
+        id: user._id,
+        name: user.name,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error deleting user'
     });
   }
 });

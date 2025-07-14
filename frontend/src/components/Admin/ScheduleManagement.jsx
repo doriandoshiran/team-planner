@@ -23,17 +23,30 @@ const ScheduleManagement = () => {
     if (employees.length > 0) {
       fetchAllSchedules(employees);
     }
-  }, [currentDate]);
+  }, [currentDate, employees]);
 
   const fetchEmployees = async () => {
     try {
       setLoading(true);
       setError('');
+      
       const response = await api.get('/auth/users');
-      setEmployees(response.data);
+      
+      // Handle the correct response structure
+      let employeesData = [];
+      if (response.data && response.data.success && response.data.data) {
+        employeesData = response.data.data;
+      } else if (response.data && response.data.users) {
+        employeesData = response.data.users;
+      } else if (Array.isArray(response.data)) {
+        employeesData = response.data;
+      }
+      
+      console.log('Fetched employees:', employeesData);
+      setEmployees(employeesData);
 
-      // Load existing schedules from database
-      await fetchAllSchedules(response.data);
+      // Load existing schedules
+      await fetchAllSchedules(employeesData);
     } catch (error) {
       console.error('Error fetching employees:', error);
       setError('Failed to fetch employees');
@@ -48,13 +61,19 @@ const ScheduleManagement = () => {
       const allSchedules = {};
       
       for (const user of users) {
+        const userId = user._id || user.id;
         try {
-          // Load individual user schedule from database using the correct API endpoint
-          const response = await api.get(`/schedules/my-schedule?userId=${user.id}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
-          allSchedules[user.id] = response.data;
+          // Use the correct endpoint that exists in your backend
+          const response = await api.get(`/schedules/my-schedule?userId=${userId}&month=${currentDate.getMonth() + 1}&year=${currentDate.getFullYear()}`);
+          
+          if (response.data && response.data.success) {
+            allSchedules[userId] = response.data.data || {};
+          } else {
+            allSchedules[userId] = {};
+          }
         } catch (error) {
-          console.error(`Error fetching schedule for user ${user.id}:`, error);
-          allSchedules[user.id] = {};
+          console.error(`Error fetching schedule for user ${userId}:`, error);
+          allSchedules[userId] = {};
         }
       }
       
@@ -67,7 +86,7 @@ const ScheduleManagement = () => {
 
   const saveSchedulesToDatabase = async (userId, date, scheduleData) => {
     try {
-      // Prepare the payload based on the schedule data type
+      // Prepare the payload for your existing admin endpoint
       let payload = {
         userId,
         date
@@ -84,6 +103,7 @@ const ScheduleManagement = () => {
 
       console.log('Sending payload to API:', payload);
 
+      // Use the correct admin endpoint that exists in your backend
       await api.post('/schedules/admin/set-schedule', payload);
       console.log('Schedule saved to database successfully');
     } catch (error) {
@@ -126,6 +146,7 @@ const ScheduleManagement = () => {
     try {
       setError('');
       
+      const userId = selectedEmployee._id || selectedEmployee.id;
       const scheduleData = location === 'dayoff' && reason
         ? { type: location, reason }
         : location;
@@ -133,16 +154,16 @@ const ScheduleManagement = () => {
       // Update local state first
       const newSchedules = {
         ...schedules,
-        [selectedEmployee.id]: {
-          ...schedules[selectedEmployee.id],
+        [userId]: {
+          ...schedules[userId],
           [date]: scheduleData
         }
       };
 
       setSchedules(newSchedules);
       
-      // Save to database
-      await saveSchedulesToDatabase(selectedEmployee.id, date, scheduleData);
+      // Save to database using your existing endpoint
+      await saveSchedulesToDatabase(userId, date, scheduleData);
       
       // Reset form state
       setSelectedLocation('');
@@ -162,12 +183,13 @@ const ScheduleManagement = () => {
     try {
       setError('');
       
+      const userId = selectedEmployee._id || selectedEmployee.id;
       const startParts = dateRange.start.split('-').map(Number);
       const endParts = dateRange.end.split('-').map(Number);
       const start = new Date(startParts[0], startParts[1] - 1, startParts[2]);
       const end = new Date(endParts[0], endParts[1] - 1, endParts[2]);
 
-      const newSchedule = { ...schedules[selectedEmployee.id] };
+      const newSchedule = { ...schedules[userId] };
 
       const scheduleData = selectedLocation === 'dayoff' && dayOffReason
         ? { type: selectedLocation, reason: dayOffReason }
@@ -198,14 +220,14 @@ const ScheduleManagement = () => {
       // Update local state
       const newSchedules = {
         ...schedules,
-        [selectedEmployee.id]: newSchedule
+        [userId]: newSchedule
       };
       setSchedules(newSchedules);
 
       // Save all dates to database
       for (const dateStr of datesToSave) {
         try {
-          await saveSchedulesToDatabase(selectedEmployee.id, dateStr, scheduleData);
+          await saveSchedulesToDatabase(userId, dateStr, scheduleData);
         } catch (error) {
           console.error(`Error saving schedule for ${dateStr}:`, error);
           setError(`Failed to save schedule for ${dateStr}`);
@@ -239,13 +261,28 @@ const ScheduleManagement = () => {
     
     try {
       setError('');
-      await api.delete('/schedules/admin/clear-schedule', {
-        data: {
-          userId: selectedEmployee.id,
-          year,
-          month
+      const userId = selectedEmployee._id || selectedEmployee.id;
+      
+      // Get all dates in the month and remove them one by one using the correct endpoint
+      const daysInMonth = new Date(year, month, 0).getDate();
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
+        try {
+          await api.delete('/schedules/admin/remove-schedule', {
+            data: {
+              userId,
+              date: dateStr
+            }
+          });
+        } catch (error) {
+          // Ignore 404 errors for dates that don't have schedules
+          if (error.response?.status !== 404) {
+            console.error(`Error removing schedule for ${dateStr}:`, error);
+          }
         }
-      });
+      }
       
       // Refresh schedules from database
       await fetchAllSchedules(employees);
@@ -262,20 +299,22 @@ const ScheduleManagement = () => {
     try {
       setError('');
       
+      const userId = selectedEmployee._id || selectedEmployee.id;
+      
       // Remove from local state
       const newSchedules = {
         ...schedules,
-        [selectedEmployee.id]: {
-          ...schedules[selectedEmployee.id]
+        [userId]: {
+          ...schedules[userId]
         }
       };
-      delete newSchedules[selectedEmployee.id][date];
+      delete newSchedules[userId][date];
       setSchedules(newSchedules);
       
-      // Remove from database
-      await api.delete(`/schedules/admin/remove-schedule`, {
+      // Remove from database using your existing endpoint
+      await api.delete('/schedules/admin/remove-schedule', {
         data: {
-          userId: selectedEmployee.id,
+          userId,
           date
         }
       });
@@ -292,7 +331,9 @@ const ScheduleManagement = () => {
   };
 
   const getEmployeeSchedule = () => {
-    return selectedEmployee ? schedules[selectedEmployee.id] || {} : {};
+    if (!selectedEmployee) return {};
+    const userId = selectedEmployee._id || selectedEmployee.id;
+    return schedules[userId] || {};
   };
 
   const getScheduleStats = (employeeId) => {
@@ -436,12 +477,13 @@ const ScheduleManagement = () => {
 
             <div className="space-y-2">
               {employees.map(employee => {
-                const stats = getScheduleStats(employee.id);
-                const isSelected = selectedEmployee?.id === employee.id;
+                const employeeId = employee._id || employee.id;
+                const stats = getScheduleStats(employeeId);
+                const isSelected = selectedEmployee && (selectedEmployee._id || selectedEmployee.id) === employeeId;
 
                 return (
                   <div
-                    key={employee.id}
+                    key={employeeId}
                     onClick={() => handleEmployeeSelect(employee)}
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
                       isSelected

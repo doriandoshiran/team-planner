@@ -34,6 +34,13 @@ const notificationSchema = new mongoose.Schema({
   },
   processedAt: {
     type: Date
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  readAt: {
+    type: Date
   }
 }, {
   timestamps: true
@@ -42,5 +49,6 @@ const notificationSchema = new mongoose.Schema({
 // Index for faster queries
 notificationSchema.index({ user: 1, isRead: 1 });
 notificationSchema.index({ createdAt: -1 });
+notificationSchema.index({ user: 1, isActive: 1 });
 
 module.exports = mongoose.model('Notification', notificationSchema);

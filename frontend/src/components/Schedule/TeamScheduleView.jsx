@@ -38,8 +38,27 @@ const TeamScheduleView = () => {
 
   const fetchCurrentUserSchedule = async () => {
     try {
-      const response = await api.get(`/schedules/my-schedule?userId=${currentUser.id}&month=${currentMonth + 1}&year=${currentYear}`);
-      setCurrentUserSchedule(response.data);
+      const userId = currentUser._id || currentUser.id;
+      
+      // Try to load from localStorage first
+      const storageKey = `schedule_${userId}_${currentYear}_${currentMonth + 1}`;
+      const savedSchedule = localStorage.getItem(storageKey);
+      
+      if (savedSchedule) {
+        setCurrentUserSchedule(JSON.parse(savedSchedule));
+      } else {
+        setCurrentUserSchedule({});
+      }
+
+      // Try to load from API if available
+      try {
+        const response = await api.get(`/schedules/user/${userId}?month=${currentMonth + 1}&year=${currentYear}`);
+        if (response.data && response.data.success) {
+          setCurrentUserSchedule(response.data.schedule || {});
+        }
+      } catch (apiError) {
+        console.log('Schedule API not available, using localStorage');
+      }
     } catch (error) {
       console.error('Error fetching current user schedule:', error);
       setCurrentUserSchedule({});
@@ -51,29 +70,69 @@ const TeamScheduleView = () => {
       setLoading(true);
       setError('');
 
-      // Get all users
+      // Get all users with proper response handling
       const usersResponse = await api.get('/auth/users');
       
+      // Handle different response structures
+      let usersData = [];
+      if (usersResponse.data && usersResponse.data.success && usersResponse.data.data) {
+        usersData = usersResponse.data.data;
+      } else if (usersResponse.data && usersResponse.data.users) {
+        usersData = usersResponse.data.users;
+      } else if (Array.isArray(usersResponse.data)) {
+        usersData = usersResponse.data;
+      }
+
+      console.log('Fetched users:', usersData);
+
+      // Ensure we have an array
+      if (!Array.isArray(usersData)) {
+        throw new Error('Invalid users data structure');
+      }
+      
       // Extract unique departments
-      const uniqueDepartments = [...new Set(usersResponse.data.map(user => user.department).filter(Boolean))];
+      const uniqueDepartments = [...new Set(usersData.map(user => user.department).filter(Boolean))];
       setDepartments(uniqueDepartments);
 
-      // Load schedules from database for each user
+      // Load schedules for each user
       const teamWithSchedules = [];
-      for (const user of usersResponse.data) {
+      for (const user of usersData) {
+        const userId = user._id || user.id;
+        const currentUserId = currentUser._id || currentUser.id;
+        
         try {
-          const scheduleResponse = await api.get(`/schedules/my-schedule?userId=${user.id}&month=${currentMonth + 1}&year=${currentYear}`);
+          // Try to load from localStorage first
+          const storageKey = `schedule_${userId}_${currentYear}_${currentMonth + 1}`;
+          const savedSchedule = localStorage.getItem(storageKey);
+          
+          let userSchedule = {};
+          if (savedSchedule) {
+            userSchedule = JSON.parse(savedSchedule);
+          }
+
+          // Try to load from API if available
+          try {
+            const scheduleResponse = await api.get(`/schedules/user/${userId}?month=${currentMonth + 1}&year=${currentYear}`);
+            if (scheduleResponse.data && scheduleResponse.data.success) {
+              userSchedule = scheduleResponse.data.schedule || {};
+            }
+          } catch (apiError) {
+            console.log(`Schedule API not available for user ${userId}, using localStorage`);
+          }
+
           teamWithSchedules.push({
             ...user,
-            schedule: scheduleResponse.data,
-            canSwapWith: user.id !== currentUser?.id
+            id: userId, // Ensure consistent ID
+            schedule: userSchedule,
+            canSwapWith: userId !== currentUserId
           });
         } catch (error) {
-          console.error(`Error fetching schedule for user ${user.id}:`, error);
+          console.error(`Error fetching schedule for user ${userId}:`, error);
           teamWithSchedules.push({
             ...user,
+            id: userId,
             schedule: {},
-            canSwapWith: user.id !== currentUser?.id
+            canSwapWith: userId !== currentUserId
           });
         }
       }
@@ -111,19 +170,50 @@ const TeamScheduleView = () => {
       return { text: '-', color: '#f3f4f6', textColor: '#9ca3af', icon: <Calendar className="h-3 w-3" /> };
     }
 
-    if (typeof schedule === 'object' && schedule.type) {
-      const type = scheduleTypes[schedule.type];
-      if (type) {
-        return {
-          text: schedule.reason ? `${type.label} (${schedule.reason})` : type.label,
-          color: type.color,
-          textColor: type.textColor,
-          icon: type.icon
-        };
+    // Handle complex schedule objects from your Schedule model
+    if (typeof schedule === 'object') {
+      // Handle schedule with location property (from your Schedule model)
+      if (schedule.location) {
+        const location = schedule.location;
+        if (typeof location === 'object' && location.type) {
+          const type = scheduleTypes[location.type];
+          if (type) {
+            return {
+              text: schedule.reason ? `${type.label} (${schedule.reason})` : type.label,
+              color: type.color,
+              textColor: type.textColor,
+              icon: type.icon
+            };
+          }
+        } else if (typeof location === 'string') {
+          const type = scheduleTypes[location];
+          if (type) {
+            return {
+              text: schedule.reason ? `${type.label} (${schedule.reason})` : type.label,
+              color: type.color,
+              textColor: type.textColor,
+              icon: type.icon
+            };
+          }
+        }
       }
-      return { text: schedule.type, color: '#6b7280', textColor: 'white', icon: <HelpCircle className="h-3 w-3" /> };
+      
+      // Handle legacy format with type property
+      if (schedule.type) {
+        const type = scheduleTypes[schedule.type];
+        if (type) {
+          return {
+            text: schedule.reason ? `${type.label} (${schedule.reason})` : type.label,
+            color: type.color,
+            textColor: type.textColor,
+            icon: type.icon
+          };
+        }
+        return { text: schedule.type, color: '#6b7280', textColor: 'white', icon: <HelpCircle className="h-3 w-3" /> };
+      }
     }
 
+    // Handle simple string schedules
     const type = scheduleTypes[schedule];
     if (type) {
       return { text: type.label, color: type.color, textColor: type.textColor, icon: type.icon };
@@ -197,12 +287,12 @@ const TeamScheduleView = () => {
   };
 
   // Filter team schedules based on department and search term
-  const filteredTeamSchedules = teamSchedules.filter(user => {
+  const filteredTeamSchedules = Array.isArray(teamSchedules) ? teamSchedules.filter(user => {
     const matchesDepartment = !selectedDepartment || user.department === selectedDepartment;
-    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = (user.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (user.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     return matchesDepartment && matchesSearch;
-  });
+  }) : [];
 
   if (loading) {
     return (
@@ -221,7 +311,10 @@ const TeamScheduleView = () => {
         <Users className="h-16 w-16 text-gray-400 mb-4" />
         <h3 className="text-xl font-semibold text-gray-700 mb-2">No Team Members Found</h3>
         <p className="text-gray-500 mb-6 max-w-md">
-          No team members match your current filters. Try adjusting your search or department filter.
+          {teamSchedules.length === 0 
+            ? 'Unable to load team members. Please check your connection and try again.'
+            : 'No team members match your current filters. Try adjusting your search or department filter.'
+          }
         </p>
         <button
           onClick={fetchTeamSchedules}
@@ -337,7 +430,7 @@ const TeamScheduleView = () => {
           </thead>
           <tbody>
             {filteredTeamSchedules.map((user, index) => (
-              <tr key={user.id} className={`hover:bg-gray-50 transition-colors ${
+              <tr key={user.id || user._id || index} className={`hover:bg-gray-50 transition-colors ${
                 index % 2 === 0 ? 'bg-white' : 'bg-gray-25'
               }`}>
                 <td className="p-4 border-b border-gray-200 bg-white sticky left-0 z-10 shadow-sm">
@@ -346,8 +439,8 @@ const TeamScheduleView = () => {
                       {user.name?.charAt(0) || 'U'}
                     </div>
                     <div>
-                      <div className="font-semibold text-gray-900">{user.name}</div>
-                      <div className="text-sm text-gray-600">{user.email}</div>
+                      <div className="font-semibold text-gray-900">{user.name || 'Unknown User'}</div>
+                      <div className="text-sm text-gray-600">{user.email || 'No email'}</div>
                       {user.department && (
                         <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full inline-block mt-1">
                           {user.department}
@@ -358,7 +451,7 @@ const TeamScheduleView = () => {
                         user.role === 'manager' ? 'bg-gradient-to-r from-orange-500 to-orange-600' : 
                         'bg-gradient-to-r from-gray-500 to-gray-600'
                       }`}>
-                        {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                        {user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'User'}
                       </div>
                     </div>
                   </div>
