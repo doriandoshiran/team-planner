@@ -18,7 +18,7 @@ const getApiBaseUrl = () => {
   }
   
   // Updated fallback to your current VPN IP
-  return 'http://10.212.243.37:5000/api';
+  return 'http://10.212.247.198:5000/api';
 };
 
 const API_BASE_URL = getApiBaseUrl();
